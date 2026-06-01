@@ -1,14 +1,9 @@
-﻿import Navbar from "@/components/layout/Navbar";
+import Navbar from "@/components/layout/Navbar";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Mail, Phone, MapPin, Send, CheckCircle, Loader2 } from "lucide-react";
 
-const team = [
-  { name: "Aditya Chouksey", role: "Full Stack Developer", sub: "Backend · AI Agents · WebSockets", initials: "AC", color: "from-blue-500 to-indigo-600" },
-  { name: "Team Member 2",   role: "Frontend Developer",  sub: "React · TypeScript · UI/UX",        initials: "TM", color: "from-violet-500 to-purple-600" },
-  { name: "Team Member 3",   role: "ML Engineer",         sub: "Resume Matching · Evaluation",       initials: "TM", color: "from-pink-500 to-rose-600" },
-  { name: "Team Member 4",   role: "Data Engineer",       sub: "Database · Pipeline · Deployment",   initials: "TM", color: "from-amber-500 to-orange-600" },
-];
+
 
 const Contact = () => {
   const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
@@ -65,7 +60,6 @@ const Contact = () => {
             <div className="space-y-6">
               {[
                 { icon: Mail,    label: "Email",    val: "sakshamservices2025@gmail.com", href: "mailto:sakshamservices2025@gmail.com" },
-                { icon: Phone,   label: "Phone",    val: "+91 7999105415",                href: "tel:+917999105415" },
                 { icon: MapPin,  label: "Location", val: "Indore, Madhya Pradesh, India", href: null },
               ].map((item, i) => (
                 <div key={i} className="flex items-start gap-4">
@@ -93,10 +87,6 @@ const Contact = () => {
               <a href="mailto:sakshamservices2025@gmail.com"
                 className="flex items-center gap-2 px-5 py-2.5 bg-gradient-primary text-white rounded-2xl text-sm font-semibold shadow-glow hover:opacity-90 transition-all">
                 <Mail className="w-3.5 h-3.5" /> Email Us
-              </a>
-              <a href="tel:+917999105415"
-                className="flex items-center gap-2 px-5 py-2.5 bg-secondary border border-border text-foreground rounded-2xl text-sm font-semibold hover:bg-secondary/80 transition-colors">
-                <Phone className="w-3.5 h-3.5" /> Call Us
               </a>
             </div>
           </motion.div>
@@ -144,29 +134,7 @@ const Contact = () => {
           </motion.div>
         </div>
 
-        {/* Team */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-          <div className="flex items-center gap-3 mb-8">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/8 border border-accent/15 text-accent text-xs font-semibold">
-              Team Saksham
-            </div>
-            <span className="text-muted-foreground text-sm">— Indore, MP, India</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {team.map((member, i) => (
-              <motion.div key={i}
-                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 * i + 0.4 }}
-                className="bg-white rounded-3xl border border-border shadow-card p-6 hover:shadow-lg hover:-translate-y-1 transition-all group">
-                <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${member.color} flex items-center justify-center mb-4 shadow-sm`}>
-                  <span className="text-white font-bold text-sm">{member.initials}</span>
-                </div>
-                <h3 className="font-display font-bold text-foreground text-sm mb-1">{member.name}</h3>
-                <p className="text-primary text-xs font-medium mb-1.5">{member.role}</p>
-                <p className="text-muted-foreground text-xs leading-relaxed">{member.sub}</p>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
+
       </div>
     </div>
   );

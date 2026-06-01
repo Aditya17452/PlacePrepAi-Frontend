@@ -1,4 +1,4 @@
-﻿/**
+/**
  * JDUploadSection.tsx
  * Rich UI component for students to paste custom JDs,
  * view Groq AI match %, and launch interviews for matched roles.
@@ -143,13 +143,9 @@ const JDUploadSection = () => {
   }, [studentId]);
 
   const loadJDs = async () => {
-    if (!studentId) return;
-    try {
-      const data = await getStudentJDs(studentId);
-      setJds(data as StudentJD[]);
-    } catch (e) {
-      console.error("Failed to load student JDs:", e);
-    }
+    // Intentionally left empty as per user request to not show past JD matches
+    // Past JDs are no longer fetched on mount.
+    return;
   };
 
   // ── Poll pending JDs every 2 s ───────────────────────────────────────────────

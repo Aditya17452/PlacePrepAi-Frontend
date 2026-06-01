@@ -8,6 +8,8 @@ import {
 import { Button } from "@/components/ui/button";
 import Navbar from "@/components/layout/Navbar";
 
+const API = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+
 interface ReportData {
   status: string;
   overallScore: number;
@@ -86,7 +88,7 @@ const Report = () => {
 
   const fetchReport = async () => {
     try {
-      const r = await fetch(`http://localhost:8000/api/interviews/${sessionId}/report`);
+      const r = await fetch(`${API}/interviews/${sessionId}/report`);
       const data = await r.json();
       if (data.status === "processing") {
         setPolling(p => p + 1);

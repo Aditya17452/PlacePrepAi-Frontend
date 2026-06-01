@@ -685,9 +685,7 @@ const InterviewRoom = () => {
   };
 
   // ── QUESTION LIMIT CHECK ──────────────────────────────────────────────
-  useEffect(() => {
-    if (questionsAsked >= MAX_QUESTIONS && !sessionEnded) handleAutoEnd();
-  }, [questionsAsked]);
+  // Removed local check: we now wait for backend to send 'session_complete'
 
   // ── MAIN INIT ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -773,7 +771,18 @@ const InterviewRoom = () => {
           });
         }
         if (data.type === "posture_warning") { setPostureTip(data.message); setTimeout(() => setPostureTip(""), 6000); }
-        if (data.type === "session_complete") { if (!sessionEndedRef.current) handleAutoEnd(); }
+        if (data.type === "session_complete") { 
+          if (!sessionEndedRef.current) {
+            if (data.message && window.speechSynthesis) {
+              setStatusMsg(data.message);
+              const u = new SpeechSynthesisUtterance(data.message);
+              u.onend = () => handleAutoEnd();
+              window.speechSynthesis.speak(u);
+            } else {
+              handleAutoEnd(); 
+            }
+          } 
+        }
         if (data.type === "error") setStatusMsg("❌ " + data.message);
       } catch (err) { console.error("WS parse:", err); }
     };

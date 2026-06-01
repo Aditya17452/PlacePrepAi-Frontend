@@ -18,6 +18,8 @@ interface CollegeStats {
   credit_limit: number;
 }
 
+const API = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+
 const OfficerCredits = () => {
   const [students, setStudents] = useState<StudentCredit[]>([]);
   const [collegeStats, setCollegeStats] = useState<CollegeStats | null>(null);
@@ -29,7 +31,7 @@ const OfficerCredits = () => {
   const loadStudents = async () => {
     setLoading(true);
     try {
-      const r = await window.fetch("http://localhost:8000/api/officer/credits", {
+      const r = await window.fetch(`${API}/officer/credits`, {
         headers: { Authorization: `Bearer ${sessionStorage.getItem("token")}` }
       });
       const data = await r.json();
@@ -49,7 +51,7 @@ const OfficerCredits = () => {
 
   const addCredits = async (studentId: string, amt: number) => {
     try {
-      const r = await window.fetch(`http://localhost:8000/api/officer/credits/${studentId}/add`, {
+      const r = await window.fetch(`${API}/officer/credits/${studentId}/add`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -68,7 +70,7 @@ const OfficerCredits = () => {
 
   const resetCredits = async (studentId: string, credits: number) => {
     try {
-      const r = await window.fetch(`http://localhost:8000/api/officer/credits/${studentId}/reset`, {
+      const r = await window.fetch(`${API}/officer/credits/${studentId}/reset`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
