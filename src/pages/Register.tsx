@@ -1,28 +1,25 @@
 ﻿import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { register } from "@/services/api";
+import { getGoogleAuthUrl, register } from "@/services/api";
 import { Eye, EyeOff, ArrowRight, Loader2, CheckCircle } from "lucide-react";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
 const Register = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
-  const [form, setForm] = useState({ name: "", email: "", branch: "", cgpa: "", password: "", confirm: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", branch: "", cgpa: "", joinCode: "", password: "", confirm: "" });
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   const handleGoogleLogin = async () => {
+    setError("");
     try {
-      const res  = await fetch(`${API_BASE}/auth/google`);
-      const data = await res.json();
-      if (data.auth_url) window.location.href = data.auth_url;
-      else setError("Google Sign-In is not configured yet.");
-    } catch {
-      setError("Could not reach the server. Is the backend running?");
+      const { auth_url } = await getGoogleAuthUrl();
+      window.location.href = auth_url;
+    } catch (e) {
+      setError((e as Error).message || "Google sign-in is not available right now.");
     }
   };
 
@@ -33,13 +30,24 @@ const Register = () => {
   };
 
   const handleRegister = async () => {
-    if (!form.password) { setError("Password is required"); return; }
+    if (form.password.length < 8) { setError("Password must be at least 8 characters"); return; }
     if (form.password !== form.confirm) { setError("Passwords don't match"); return; }
+    const cgpa = form.cgpa ? parseFloat(form.cgpa) : null;
+    if (cgpa !== null && (Number.isNaN(cgpa) || cgpa < 0 || cgpa > 10)) { setError("CGPA must be between 0 and 10"); return; }
     setLoading(true); setError("");
     try {
-      await register({ name: form.name, email: form.email, password: form.password, branch: form.branch, cgpa: parseFloat(form.cgpa) || undefined });
-      navigate("/dashboard");
-    } catch (e: any) { setError(e.message || "Registration failed"); }
+      await register({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        password: form.password,
+        phone: form.phone.trim() || null,
+        branch: form.branch.trim() || null,
+        cgpa,
+        join_code: form.joinCode.trim() || null,
+      });
+      // New accounts verify their email (and phone for the free tier) before interviewing.
+      navigate("/verify");
+    } catch (e) { setError((e as Error).message || "Registration failed"); }
     finally { setLoading(false); }
   };
 
@@ -154,6 +162,11 @@ const Register = () => {
                 <div>
                   <label className="text-xs font-semibold text-foreground/70 block mb-2">Email Address</label>
                   <input type="email" value={form.email} onChange={e => set("email", e.target.value)} className={inputCls} placeholder="you@college.edu" />
+                  <p className="text-[11px] text-muted-foreground mt-1.5">Use your college email if your college is on PlacePrep — that links you to its interview quota.</p>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-foreground/70 block mb-2">Mobile Number <span className="font-normal text-muted-foreground">(for the free trial)</span></label>
+                  <input type="tel" value={form.phone} onChange={e => set("phone", e.target.value)} className={inputCls} placeholder="+91 98765 43210" />
                 </div>
                 <button onClick={next}
                   className="w-full mt-2 flex items-center justify-center gap-2 py-4 bg-gradient-primary text-white font-semibold rounded-xl shadow-glow hover:opacity-90 transition-all text-sm">
@@ -174,9 +187,13 @@ const Register = () => {
                   </div>
                 </div>
                 <div>
+                  <label className="text-xs font-semibold text-foreground/70 block mb-2">College Join Code <span className="font-normal text-muted-foreground">(optional)</span></label>
+                  <input value={form.joinCode} onChange={e => set("joinCode", e.target.value)} className={inputCls} placeholder="From your placement cell" />
+                </div>
+                <div>
                   <label className="text-xs font-semibold text-foreground/70 block mb-2">Password</label>
                   <div className="relative">
-                    <input type={showPass ? "text" : "password"} value={form.password} onChange={e => set("password", e.target.value)} className={`${inputCls} pr-12`} placeholder="Min 6 characters" />
+                    <input type={showPass ? "text" : "password"} value={form.password} onChange={e => set("password", e.target.value)} className={`${inputCls} pr-12`} placeholder="Min 8 characters" />
                     <button type="button" onClick={() => setShowPass(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground hover:text-foreground">
                       {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>

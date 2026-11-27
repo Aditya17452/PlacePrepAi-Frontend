@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, Circle, ChevronRight, Mic, Monitor, Wifi, Clock, Brain, MessageSquare, AlertCircle } from "lucide-react";
+import { CheckCircle, Circle, ChevronRight, Mic, Monitor, Wifi, Clock, Brain, MessageSquare, AlertCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Navbar from "@/components/layout/Navbar";
+import { getInterviewContext } from "@/lib/interviewStore";
+import { displayName, getUser } from "@/lib/session";
 
 const INSTRUCTIONS = [
   {
@@ -47,6 +49,13 @@ const INSTRUCTIONS = [
     desc: "Type answers clearly in the text box. Press Enter or click Submit when done.",
     color: "text-cyan-400",
     bg: "bg-cyan-500/10 border-cyan-500/20"
+  },
+  {
+    icon: <ShieldCheck className="w-5 h-5" />,
+    title: "Proctoring Consent",
+    desc: "I agree that my camera, tab switches, full-screen exits and pasted text are monitored during this interview. These signals produce an integrity score shown on my report and to my college placement cell. A low-resolution snapshot is taken only when a violation is detected and is deleted after 14 days.",
+    color: "text-orange-400",
+    bg: "bg-orange-500/10 border-orange-500/20"
   }
 ];
 
@@ -54,10 +63,15 @@ const PreInterview = () => {
   const navigate = useNavigate();
   const [checked, setChecked] = useState<boolean[]>(new Array(INSTRUCTIONS.length).fill(false));
 
-  const studentName = sessionStorage.getItem("student_name") || "Candidate";
-  const company = sessionStorage.getItem("interview_company") || "Company";
-  const role = sessionStorage.getItem("interview_role") || "Role";
-  const sessionId = sessionStorage.getItem("session_id");
+  const ctx = getInterviewContext();
+  const studentName = displayName(getUser()?.name) || "Candidate";
+  const company = ctx?.company || "Company";
+  const role = ctx?.role || "Role";
+  const sessionId = ctx?.sessionId;
+
+  useEffect(() => {
+    if (!sessionId) navigate("/dashboard", { replace: true });
+  }, [sessionId, navigate]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -85,9 +99,15 @@ const PreInterview = () => {
     setChecked(next);
   };
 
-  const handleStart = () => {
+  const handleStart = async () => {
     if (!allChecked) return;
     if (!sessionId) { navigate("/dashboard"); return; }
+    // Full screen needs a user gesture, so it is requested here, on the click.
+    try {
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+    } catch {
+      /* Browser refused (e.g. iOS Safari). The interview still runs; exits are just not detectable. */
+    }
     navigate("/interview");
   };
 
@@ -123,7 +143,7 @@ const PreInterview = () => {
         >
           <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-yellow-200">
-            This interview uses <strong>1 interview credit</strong>. Once started, the session cannot be paused. Make sure you are ready before proceeding.
+            One interview token is reserved for this session. It is used once you answer 3 questions or 5 minutes pass; if the interview fails on our side before that, it is returned automatically. The interview runs in full screen and cannot be paused.
           </p>
         </motion.div>
 
@@ -209,7 +229,7 @@ const PreInterview = () => {
         </AnimatePresence>
 
         <p className="text-center text-xs text-muted-foreground mt-4">
-          By starting, you agree that this session will use 1 credit from your account.
+          By starting, you agree to the proctoring terms above and that this session uses 1 interview token.
         </p>
       </div>
     </div>

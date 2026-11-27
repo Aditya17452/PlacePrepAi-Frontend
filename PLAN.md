@@ -422,6 +422,21 @@ ends with: what changed / how to test it / open risks.
 - Sentry on both sides (DSN via env, PII scrubbed); security headers in `vercel.json`.
 - Real tests: API client, env resolution, the reducer logic pulled out of `InterviewRoom`.
 
+> **Status (2026-11-27, branch `feat/phase1c-frontend`): done, pending end-to-end test on a Vercel preview.**
+> - [x] `src/lib/env.ts` (fails fast in production); WebSocket env vars removed — the interview is HTTP turns now.
+> - [x] Typed client generated from the backend OpenAPI schema (`npm run gen:api`), `ApiError` with status, 401 → re-login.
+> - [x] `ErrorBoundary`, `QueryClientProvider`, toasters mounted; route-level code splitting.
+> - [x] `RequireAuth` with roles `student` / `college_admin` / `admin`; old `/officer`, `/super-admin`, `/buy-credits` redirect.
+> - [x] OAuth one-time-code exchange; email/phone OTP page; college-admin invite page; MFA code on login.
+> - [x] Interview room on `POST /interviews/{id}/turns`: client `turn_id`, retry with backoff, resume after refresh, retry button.
+> - [x] Proctoring batched to `POST /interviews/{id}/proctoring` every 5 s; server decides termination; no client auto-end.
+> - [x] Tokens: wallet, plans, Razorpay checkout, status polling (webhook grants tokens); no client-side deduction.
+> - [x] College-admin console (students + reports, roster CSV, join requests, allowance groups/overrides) and admin console (colleges, grant/revoke, freeze, verify domain, audit + ledger).
+> - [x] Sentry (lazy, no PII), security headers in `vercel.json`, CI (lint, typecheck, tests, build, secret grep).
+> - [x] Tests: API client, retry, session, CSV parser, proctoring batching.
+> - [ ] Shortlist UI (endpoint wired in `services/api.ts`, no screen yet).
+> - [ ] Server-side record of the proctoring consent (consent shown and required in the UI; no backend endpoint yet).
+
 **1d. Load test**
 - k6: 100 concurrent WS interview sessions, ~12 turns each, Groq stubbed and live.
 - Expected bottleneck: Groq tokens/min and requests/min on the shared key. Mitigation —

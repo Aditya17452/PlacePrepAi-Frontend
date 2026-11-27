@@ -1,10 +1,21 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { login } from "@/services/api";
+import { getGoogleAuthUrl, login } from "@/services/api";
+import { homeFor, isLoggedIn, getUser } from "@/lib/session";
 import { Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+const OAUTH_ERRORS: Record<string, string> = {
+  google_failed: "Google sign-in failed. Please try again.",
+  email_not_verified: "Your Google account email is not verified.",
+  oauth_expired: "The sign-in link expired. Please try again.",
+};
+
+/** Only allow same-site relative redirects after login. */
+function safeNext(next: string | null): string | null {
+  if (!next || !next.startsWith("/") || next.startsWith("//")) return null;
+  return next;
+}
 
 const Login = () => {
   const navigate = useNavigate();
@@ -15,36 +26,44 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [roleTab, setRoleTab] = useState<"student" | "handler">("student");
   const [error, setError] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [needsMfa, setNeedsMfa] = useState(false);
 
-  // Show errors redirected back from Google OAuth callback
+  // Already signed in → go home.
+  useEffect(() => {
+    const user = getUser();
+    if (isLoggedIn() && user) navigate(homeFor(user.role), { replace: true });
+  }, [navigate]);
+
+  // Show errors redirected back from the Google OAuth callback.
   useEffect(() => {
     const oauthError = searchParams.get("error");
-    if (oauthError === "domain_not_allowed")
-      setError(`Only @indoreinstitute.com emails are allowed to register.`);
-    else if (oauthError) setError("Sign-in failed. Please try again.");
-  }, []);
+    if (oauthError) setError(OAUTH_ERRORS[oauthError] ?? "Sign-in failed. Please try again.");
+  }, [searchParams]);
 
   const handleGoogleLogin = async () => {
+    setError("");
     try {
-      const res  = await fetch(`${API_BASE}/auth/google`);
-      const data = await res.json();
-      if (data.auth_url) window.location.href = data.auth_url;
-      else setError("Google Sign-In is not configured yet.");
-    } catch {
-      setError("Could not reach the server. Is the backend running?");
+      const { auth_url } = await getGoogleAuthUrl();
+      window.location.href = auth_url;
+    } catch (e) {
+      setError((e as Error).message || "Google sign-in is not available right now.");
     }
   };
 
   const handleLogin = async () => {
     if (!email || !password) { setError("Please fill in all fields"); return; }
+    if (needsMfa && !/^\d{6}$/.test(mfaCode)) { setError("Enter the 6-digit code from your authenticator app."); return; }
     setLoading(true); setError("");
     try {
-      const data = await login(email, password);
-      if (data.role === "super_admin")                        navigate("/super-admin");
-      else if (data.role === "officer" || data.role === "admin") navigate("/officer");
-      else navigate("/dashboard");
-    } catch (e: any) {
-      setError(e.message || "Invalid credentials");
+      const data = await login(email, password, needsMfa ? mfaCode : undefined);
+      const role = getUser()?.role ?? "student";
+      if (data.needs_verification && role === "student") { navigate("/verify"); return; }
+      navigate(safeNext(searchParams.get("next")) ?? homeFor(role));
+    } catch (e) {
+      const message = (e as Error).message || "Invalid credentials";
+      if (/authenticator code/i.test(message)) setNeedsMfa(true);
+      setError(message);
     } finally { setLoading(false); }
   };
 
@@ -167,6 +186,16 @@ const Login = () => {
                 </button>
               </div>
             </div>
+            {needsMfa && (
+              <div>
+                <label className="text-xs font-semibold text-foreground/70 block mb-2">Authenticator code</label>
+                <input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={mfaCode}
+                  onChange={e => setMfaCode(e.target.value.replace(/\D/g, ""))}
+                  onKeyDown={e => e.key === "Enter" && handleLogin()}
+                  className="w-full px-4 py-3.5 bg-white border border-border rounded-xl text-sm tracking-widest font-mono focus:outline-none focus:ring-2 focus:ring-primary/25"
+                  placeholder="123456" />
+              </div>
+            )}
           </div>
 
           <button onClick={handleLogin} disabled={loading}
@@ -179,14 +208,6 @@ const Login = () => {
             <Link to="/register" className="text-primary font-semibold hover:underline">Create one free</Link>
           </p>
 
-          {/* Demo credentials */}
-          <div className="mt-8 p-4 bg-secondary/60 border border-border rounded-xl">
-            <p className="text-xs font-semibold text-muted-foreground mb-2">Demo Credentials</p>
-            <div className="space-y-1">
-              <p className="text-xs text-foreground/70 font-mono">Student: test@test.com / test123</p>
-              <p className="text-xs text-foreground/70 font-mono">Officer: officer@placeprep.com / admin123</p>
-            </div>
-          </div>
         </motion.div>
       </div>
     </div>

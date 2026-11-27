@@ -3,9 +3,8 @@
  * Rich UI component for students to paste custom JDs,
  * view Groq AI match %, and launch interviews for matched roles.
  *
- * Rules obeyed:
- *  - Does NOT touch InterviewRoom, Report, Login, Register, credits system, or auth flow
- *  - 100% backward-compatible addition to Dashboard
+ * Starting an interview reserves one token on the server, in the same transaction that
+ * creates the session. The client never deducts tokens itself.
  */
 
 import { useState, useEffect } from "react";
@@ -18,14 +17,14 @@ import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import {
   submitStudentJD,
-  getStudentJDs,
-  getJDStatus,
+  getStudentJD,
   deleteStudentJD,
-  startInterviewWithCustomJD,
-  getCredits,
-  useCredit,
-  getStudentId,
+  startInterview,
+  getWallet,
 } from "@/services/api";
+import { ApiError } from "@/lib/api/client";
+import { getUser } from "@/lib/session";
+import { saveInterviewContext } from "@/lib/interviewStore";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -113,7 +112,7 @@ const SkeletonCard = () => (
 
 const JDUploadSection = () => {
   const navigate    = useNavigate();
-  const studentId   = getStudentId();
+  const studentId   = getUser()?.id ?? "";
 
   const [jds,        setJds]        = useState<StudentJD[]>([]);
   const [showForm,   setShowForm]   = useState(false);
@@ -137,9 +136,9 @@ const JDUploadSection = () => {
   useEffect(() => {
     if (!studentId) return;
     loadJDs();
-    getCredits()
-      .then(d => setCredits(d.credits))
-      .catch(() => setCredits(99));
+    getWallet()
+      .then(w => setCredits(w.total_available))
+      .catch(() => setCredits(null));
   }, [studentId]);
 
   const loadJDs = async () => {
@@ -156,11 +155,11 @@ const JDUploadSection = () => {
 
     const timer = setInterval(async () => {
       const updates = await Promise.all(
-        pendingIds.map(id => getJDStatus(id).catch(() => null))
+        pendingIds.map(id => getStudentJD(id).catch(() => null))
       );
       setJds(prev =>
         prev.map(jd => {
-          const fresh = updates.find((u: any) => u?.id === jd.id);
+          const fresh = updates.find((u) => u?.id === jd.id);
           return fresh ? { ...jd, ...(fresh as Partial<StudentJD>) } : jd;
         })
       );
@@ -186,8 +185,7 @@ const JDUploadSection = () => {
     if (!validate() || !studentId) return;
     setSubmitting(true);
     try {
-      const result: any = await submitStudentJD({
-        student_id:   studentId,
+      const result = await submitStudentJD({
         company_name: companyName.trim(),
         role_title:   roleTitle.trim(),
         jd_text:      jdText.trim(),
@@ -211,8 +209,8 @@ const JDUploadSection = () => {
       setShowForm(false);
       setCompanyName(""); setRoleTitle(""); setJdText("");
       setErrors({});
-    } catch (e: any) {
-      setErrors({ submit: e.message || "Failed to submit JD. Try again." });
+    } catch (e) {
+      setErrors({ submit: (e as Error).message || "Failed to submit JD. Try again." });
     } finally {
       setSubmitting(false);
     }
@@ -223,7 +221,7 @@ const JDUploadSection = () => {
     if (!studentId) return;
     setDeletingId(jdId);
     try {
-      await deleteStudentJD(jdId, studentId);
+      await deleteStudentJD(jdId);
       setJds(prev => prev.filter(j => j.id !== jdId));
     } catch (e) {
       console.error("Delete failed:", e);
@@ -235,22 +233,25 @@ const JDUploadSection = () => {
   // ── Start interview with custom JD ────────────────────────────────────────────
   const handleStartInterview = async (jd: StudentJD) => {
     setCreditError("");
-    if (credits !== null && credits !== 99 && credits <= 0) {
-      setCreditError("No interview credits left. Contact your placement officer.");
+    if (credits !== null && credits <= 0) {
+      setCreditError("You have no interview tokens left. Buy a plan, or ask your placement cell for more.");
       return;
     }
 
     setIsStarting(jd.id);
     try {
-      if (credits !== null && credits !== 99) {
-        await useCredit();
-        setCredits(c => Math.max(0, (c ?? 1) - 1));
-      }
-      await startInterviewWithCustomJD(jd.id);
+      const data = await startInterview({ customJdId: jd.id });
+      saveInterviewContext(data);
+      setCredits(data.tokens_remaining);
       navigate("/pre-interview");
-    } catch (err: any) {
-      setCreditError(err.message || "Failed to start interview. Please try again.");
-      getCredits().then(d => setCredits(d.credits)).catch(() => {});
+    } catch (err) {
+      const e = err as Error;
+      if (err instanceof ApiError && err.status === 402) {
+        setCreditError(`${e.message} You can buy a plan from the Plans page.`);
+      } else {
+        setCreditError(e.message || "Failed to start interview. Please try again.");
+      }
+      getWallet().then(w => setCredits(w.total_available)).catch(() => {});
     } finally {
       setIsStarting(null);
     }
@@ -311,6 +312,7 @@ const JDUploadSection = () => {
           >
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span className="flex-1">{creditError}</span>
+            <button onClick={() => navigate("/plans")} className="text-xs font-semibold underline">View plans</button>
             <button onClick={() => setCreditError("")}><X className="w-3.5 h-3.5" /></button>
           </motion.div>
         )}
@@ -575,10 +577,10 @@ const JDUploadSection = () => {
                       )}
 
                       {/* Credits note (only when unlocked) */}
-                      {isUnlocked && credits !== null && credits !== 99 && (
+                      {isUnlocked && credits !== null && (
                         <div className="flex items-center gap-1.5 mt-3 text-xs text-muted-foreground">
                           <CreditCard className="w-3 h-3" />
-                          Uses 1 credit · {credits} remaining
+                          Uses 1 token · {credits} available
                         </div>
                       )}
 
@@ -594,7 +596,7 @@ const JDUploadSection = () => {
                           >
                             <Play className="w-3.5 h-3.5 mr-1.5" />
                             {isThisStarting  ? "Starting..."
-                            : credits === 0  ? "No Credits Left"
+                            : credits === 0  ? "No Tokens Left"
                             :                  "Start Interview"}
                           </Button>
                         ) : (

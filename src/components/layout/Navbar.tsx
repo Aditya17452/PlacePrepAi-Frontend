@@ -3,7 +3,9 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { LogOut, CreditCard, User, Menu, X, Mail, BookOpen, Award, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import * as Dialog from "@radix-ui/react-dialog";
-import { getMe } from "@/services/api";
+import { getMe, type Me } from "@/services/api";
+import { clearSession } from "@/lib/session";
+import { useSession } from "@/app/useSession";
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -11,7 +13,7 @@ const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [profileData, setProfileData] = useState<any>(null);
+  const [profileData, setProfileData] = useState<Me | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
 
   const handleOpenProfile = async (open: boolean) => {
@@ -29,9 +31,10 @@ const Navbar = () => {
     }
   };
 
-  const token = sessionStorage.getItem("token");
-  const role = sessionStorage.getItem("role");
-  const name = sessionStorage.getItem("student_name") || sessionStorage.getItem("name") || "";
+  const { user, loggedIn } = useSession();
+  const token = loggedIn;
+  const role = user?.role;
+  const name = user?.name ?? "";
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -39,7 +42,7 @@ const Navbar = () => {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const logout = () => { sessionStorage.clear(); navigate("/"); };
+  const logout = () => { clearSession(); setProfileData(null); navigate("/"); };
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -62,23 +65,21 @@ const Navbar = () => {
   ];
   const studentLinks = [
     { label: "Dashboard", path: "/dashboard" },
-    { label: "Buy Credits", path: "/buy-credits" },
+    { label: "Plans", path: "/plans" },
     { label: "Contact", path: "/contact" },
   ];
-  const officerLinks = [
-    { label: "Students", path: "/officer" },
-    { label: "Credits", path: "/officer/credits" },
+  const collegeAdminLinks = [
+    { label: "College", path: "/college" },
     { label: "Contact", path: "/contact" },
   ];
-  const superAdminLinks = [
-    { label: "Control Center", path: "/super-admin" },
-    { label: "Contact", path: "/contact" },
+  const adminLinks = [
+    { label: "Control Center", path: "/admin" },
   ];
 
   const links =
-    !token          ? guestLinks :
-    role === "super_admin"                        ? superAdminLinks :
-    role === "officer" || role === "admin"        ? officerLinks :
+    !token                    ? guestLinks :
+    role === "admin"          ? adminLinks :
+    role === "college_admin"  ? collegeAdminLinks :
     studentLinks;
 
   return (
@@ -118,9 +119,9 @@ const Navbar = () => {
             ) : (
               <div className="flex items-center gap-2">
                 {role === "student" && (
-                  <button onClick={() => navigate("/buy-credits")}
+                  <button onClick={() => navigate("/plans")}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/8 border border-primary/15 text-primary text-xs font-medium hover:bg-primary/15 transition-colors">
-                    <CreditCard className="w-3.5 h-3.5" /> Credits
+                    <CreditCard className="w-3.5 h-3.5" /> Tokens
                   </button>
                 )}
                 <Dialog.Root open={profileOpen} onOpenChange={handleOpenProfile}>
@@ -137,7 +138,7 @@ const Navbar = () => {
                     <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 animate-in fade-in" />
                     <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-full max-w-sm translate-x-[-50%] translate-y-[-50%] rounded-2xl bg-card p-6 shadow-xl border border-border animate-in fade-in zoom-in-95">
                       <div className="flex justify-between items-center mb-5">
-                        <Dialog.Title className="text-lg font-bold">Student Profile</Dialog.Title>
+                        <Dialog.Title className="text-lg font-bold">Profile</Dialog.Title>
                         <Dialog.Close asChild>
                           <button className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground"><X className="w-4 h-4" /></button>
                         </Dialog.Close>
@@ -157,27 +158,37 @@ const Navbar = () => {
                             </div>
                           </div>
                           
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="p-3 rounded-xl border border-border bg-card">
-                              <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><BookOpen className="w-3 h-3"/> Branch</div>
-                              <div className="font-semibold text-sm">{profileData.branch}</div>
-                            </div>
-                            <div className="p-3 rounded-xl border border-border bg-card">
-                              <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Award className="w-3 h-3"/> CGPA</div>
-                              <div className="font-semibold text-sm">{profileData.cgpa}</div>
-                            </div>
-                          </div>
-                          
-                          <div className="p-4 rounded-xl border border-border bg-card flex justify-between items-center">
-                            <div>
-                              <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><CreditCard className="w-3 h-3"/> Credits</div>
-                              <div className="font-bold text-lg text-primary">{profileData.credits} <span className="text-xs text-muted-foreground font-normal">remaining</span></div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-xs text-muted-foreground mb-1">Total Used</div>
-                              <div className="font-semibold text-sm">{profileData.total_used}</div>
-                            </div>
-                          </div>
+                          {profileData.role === "student" && (
+                            <>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="p-3 rounded-xl border border-border bg-card">
+                                  <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><BookOpen className="w-3 h-3"/> Branch</div>
+                                  <div className="font-semibold text-sm">{profileData.branch || "—"}</div>
+                                </div>
+                                <div className="p-3 rounded-xl border border-border bg-card">
+                                  <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Award className="w-3 h-3"/> CGPA</div>
+                                  <div className="font-semibold text-sm">{profileData.cgpa ?? "—"}</div>
+                                </div>
+                              </div>
+
+                              <div className="p-4 rounded-xl border border-border bg-card flex justify-between items-center">
+                                <div>
+                                  <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><CreditCard className="w-3 h-3"/> Interview tokens</div>
+                                  <div className="font-bold text-lg text-primary">{profileData.tokens_available} <span className="text-xs text-muted-foreground font-normal">available</span></div>
+                                </div>
+                                <div className="text-right text-xs text-muted-foreground">
+                                  <div>Personal: {profileData.personal_tokens}</div>
+                                  {profileData.college_name && <div>{profileData.college_name}: {profileData.college_allowance_remaining}</div>}
+                                </div>
+                              </div>
+                              {(!profileData.email_verified) && (
+                                <button onClick={() => { setProfileOpen(false); navigate("/verify"); }}
+                                  className="w-full text-xs py-2 rounded-xl border border-amber-500/40 text-amber-600 bg-amber-500/10">
+                                  Verify your account to unlock free interviews
+                                </button>
+                              )}
+                            </>
+                          )}
                         </div>
                       ) : (
                         <div className="py-4 text-center text-sm text-red-400">Failed to load profile</div>
