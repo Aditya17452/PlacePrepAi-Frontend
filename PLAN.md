@@ -460,7 +460,18 @@ ends with: what changed / how to test it / open risks.
 >       `authenticated` grants revoked. Not yet applied to Supabase.
 > - [x] Backup procedure written into `RUNBOOK.md` (dashboard check + session-pooler
 >       `pg_dump` + a verification step, because a truncated dump looks like a backup).
-> - [ ] Migrations applied to Supabase and advisors re-run — **waiting on the backup**.
+> - [x] Migrations applied to Supabase (2026-11-27, after backup confirmed). `alembic_version`
+>       = `0006_fk_covering_indexes`. Applied through the Supabase MCP so no database
+>       password had to move through a chat; `alembic_version` set to match so the CLI stays
+>       correct. Verified: 8 student wallets / 472 tokens, college pool 457, 7 accounts
+>       linked to the college, 6 in the default allowance group, 6 `jd_chunks`, 7 plans.
+> - [x] Two gaps found *by verifying* rather than by tests: `students.college_id` was never
+>       backfilled (college console would have shown zero students, and nobody could draw
+>       from the pool) → `0005`; two unindexed foreign keys → `0006`.
+> - [x] Advisors re-run. The 9 ERROR-level `rls_disabled_in_public` findings are gone;
+>       `unindexed_foreign_keys` cleared. What remains is INFO-only and deliberately left:
+>       `rls_enabled_no_policy` *is* deny-by-default (adding policies would grant the anon
+>       key access), and `unused_index` only means no traffic has hit minutes-old indexes.
 > - [ ] End-to-end run on Vercel previews.
 >
 > **Contract audit against backend `chore/project-structure` (2026-11-27): no mismatches.**
