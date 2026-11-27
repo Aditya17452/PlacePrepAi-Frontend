@@ -434,8 +434,34 @@ ends with: what changed / how to test it / open risks.
 > - [x] College-admin console (students + reports, roster CSV, join requests, allowance groups/overrides) and admin console (colleges, grant/revoke, freeze, verify domain, audit + ledger).
 > - [x] Sentry (lazy, no PII), security headers in `vercel.json`, CI (lint, typecheck, tests, build, secret grep).
 > - [x] Tests: API client, retry, session, CSV parser, proctoring batching.
-> - [ ] Shortlist UI (endpoint wired in `services/api.ts`, no screen yet).
-> - [ ] Server-side record of the proctoring consent (consent shown and required in the UI; no backend endpoint yet).
+> - [x] Shortlist UI — `/college → Shortlist`, role picker plus ranked table with integrity
+>       in its own column.
+> - [x] Server-side record of the proctoring consent — `POST /api/consents` stores kind,
+>       version, IP and user agent; `/interviews/start` refuses a proctored session without
+>       a current one.
+>       Fixing this exposed an ordering bug: the notice was on `/pre-interview` but
+>       `/interviews/start` ran one screen earlier on the dashboard, so the first interview
+>       would have 403'd before the student ever saw the consent text. The session is now
+>       created on `/pre-interview`, after they agree — which also stops a token being
+>       reserved for someone who backs out of the checklist.
+>
+> **Phase 1 gaps closed (2026-11-27, branch `feat/phase1-backend-gaps`):**
+> - [x] Consent endpoints, versioned, with the start gate. 20 tests.
+> - [x] OTP delivery: Resend for email; MSG91 for SMS behind `SMS_ENABLED=false` until the
+>       DLT template is approved. Both still return 503 when a channel is unavailable, and
+>       the message says whether it is switched off or misconfigured.
+> - [x] TOTP enrolment for admins (`/api/auth/mfa/setup` + `/confirm`), with the enrolment
+>       section on `/admin → Security`. Confirming signs the account out everywhere.
+> - [x] Confirmed **with tests**, not assertions: CORS reflects only configured origins and
+>       never `*`; rate limits on login / OTP / interview start / payments return 429 with
+>       `Retry-After`; `/ready` reports the in-memory Redis fallback honestly; resume upload
+>       refuses >5 MB (413) and non-document bytes (400) regardless of declared content type.
+> - [x] RLS deny-by-default migration `0004` — 32 tables, no policies, `anon` /
+>       `authenticated` grants revoked. Not yet applied to Supabase.
+> - [x] Backup procedure written into `RUNBOOK.md` (dashboard check + session-pooler
+>       `pg_dump` + a verification step, because a truncated dump looks like a backup).
+> - [ ] Migrations applied to Supabase and advisors re-run — **waiting on the backup**.
+> - [ ] End-to-end run on Vercel previews.
 >
 > **Contract audit against backend `chore/project-structure` (2026-11-27): no mismatches.**
 > Checked mechanically, not by eye — the committed `src/lib/api/openapi.json` was diffed
