@@ -436,6 +436,23 @@ ends with: what changed / how to test it / open risks.
 > - [x] Tests: API client, retry, session, CSV parser, proctoring batching.
 > - [ ] Shortlist UI (endpoint wired in `services/api.ts`, no screen yet).
 > - [ ] Server-side record of the proctoring consent (consent shown and required in the UI; no backend endpoint yet).
+>
+> **Contract audit against backend `chore/project-structure` (2026-11-27): no mismatches.**
+> Checked mechanically, not by eye — the committed `src/lib/api/openapi.json` was diffed
+> against the live spec from `create_app().openapi()`:
+> - 53 paths on each side, identical sets; no method differences on any shared path.
+> - `components.schemas` identical: no field-name, extra-field or `required` differences.
+> - Declared response status codes identical on every operation.
+> - Every hand-written path in `src/services/api.ts` resolves to a real route.
+> - The three query-parameter endpoints (`/officer/shortlist?jd_id`,
+>   `/super/colleges/{id}/freeze?frozen`, `/officer/enrollment-requests/{id}?approve`)
+>   are called with `query:`, not a JSON body — which is what the old `generateShortlist`
+>   got wrong and 422'd on.
+> - `withRetry` treats 503 as retryable, and is applied only to turn submission, where
+>   503 means `LLMBusy` backpressure. The other 503 paths (OTP with no provider,
+>   Razorpay unset) are permanent and are not retried.
+>
+> Nothing to fix here. The two unchecked boxes above are backend gaps, not mismatches.
 
 **1d. Load test**
 - k6: 100 concurrent WS interview sessions, ~12 turns each, Groq stubbed and live.
