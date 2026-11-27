@@ -814,3 +814,75 @@ Groq. Self-serve production defaults:
   only while our key still has access.
 - `llm_usage` table logs tokens in/out and STT seconds per interview, so cost per interview
   is measured, not estimated. This feeds the §9 guardrail.
+
+---
+
+## Step 4 status — Vercel previews (2026-11-27)
+
+### Projects
+
+| | |
+|---|---|
+| Backend | `placeprepai-backend` (`prj_IaXhMX56t7r72Hh8TznCZtI4WIvl`), linked to `Aditya17452/PlacePrepAi-Backend` |
+| Frontend | `place-prep-ai-frontend` (`prj_mAkPyx7nOCA1IWelhcby8sWgt8fE`) — already existed, holds `placeprepai.fun` and `www.placeprepai.fun` |
+| Preview alias | `placeprepai-backend-git-feat-phase-2a2332-aditya17452s-projects.vercel.app` |
+
+### Build: four failures, each a real misconfiguration
+
+1. `No interpreter found for Python 3.11.9` — exact patch pin; Vercel's uv has no such interpreter.
+2. `No interpreter found for Python 3.11` — **Vercel's Python runtime does not offer 3.11 at all.** 3.12 is the supported version. Pinning 3.11 was never going to work.
+3. `uv sync --locked` ran regardless of whether `[project].dependencies` was declared, and failed without a committed lockfile. `uv.lock` is now committed and `uv lock --check` passes.
+4. `vercel.json: crons[0] should NOT have additional property "comment"` — the file is strict JSON with a closed schema, so the cron rationale moved to `RUNBOOK.md`.
+
+Build is **READY** as of `502f506`.
+
+### Runtime: blocked on three secrets, by design
+
+`GET /health` returns 500, and the log says exactly why:
+
+```
+Invalid configuration for ENV=preview:
+  - JWT_SECRET is unset or a known placeholder value
+```
+
+That is the startup guard working as intended — a half-configured deploy fails loudly
+instead of serving requests with an insecure default.
+
+Set in the Vercel dashboard (backend project → Settings → Environment Variables):
+
+| Variable | Target | Why not set here |
+|---|---|---|
+| `JWT_SECRET` | preview, production | Reading it out of the local `.env` was blocked, and inventing one would not be cryptographically random. Generate with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Local and preview may legitimately differ. |
+| `CRON_SECRET` | preview, production | Same. Vercel sends it as `Authorization: Bearer` to the cron endpoints; without it they return 503 and refuse to run. |
+| `RAZORPAY_WEBHOOK_SECRET` | preview | Comes from the Razorpay dashboard when the webhook is created, so it does not exist until Step 4's webhook step. |
+
+### Everything else already configured
+
+22 variables set via the API, secrets marked `sensitive` so their values are not
+readable back: `ENV` (preview/production split), `DATABASE_URL`, `DB_POOL_SIZE`,
+`DB_MAX_OVERFLOW`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`,
+`ADMIN_BOOTSTRAP_EMAILS`, `GROQ_API_KEY`, `LLM_MAX_CONCURRENCY`, `RATE_LIMIT_LLM`,
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, `GITHUB_TOKEN`, `RESEND_API_KEY`, `EMAIL_FROM`,
+`SMS_ENABLED`, `CRON_DRAIN_BATCH`, `OPPORTUNISTIC_DRAIN`, `CORS_ORIGINS`,
+`CORS_ORIGIN_REGEX`, `FRONTEND_URL`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`.
+
+Frontend: `VITE_API_BASE_URL` added for the **preview** target only, pointing at the
+backend preview plus `/api`. The existing production value was left untouched.
+
+`ENV=preview` rather than `production` is deliberate: `ENV=production` refuses an
+`rzp_test_` Razorpay key, so a preview on test-mode payments has to be `preview`.
+
+### Still to do in Step 4
+
+- Add the backend preview callback to the Google console's Authorized redirect URIs:
+  `https://placeprepai-backend-aditya17452s-projects.vercel.app/api/auth/google/callback`
+- Create the Razorpay test-mode webhook pointing at
+  `<backend preview>/api/payments/webhook` for `payment.captured`, `payment.failed`,
+  `order.paid`, `refund.processed`, then set `RAZORPAY_WEBHOOK_SECRET`.
+- **Vercel SSO protection is on** for the frontend project (`all_except_custom_domains`),
+  so preview URLs demand Vercel login. Step 5's automated run needs either a protection
+  bypass token or testing through the custom domain.
+- Resend domain `placeprepai.fun` is `not_started`: until the DKIM records are added,
+  email only sends from `onboarding@resend.dev` and only reaches the Resend account
+  owner. OTP will work for your own testing, not for other students.
