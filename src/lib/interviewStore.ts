@@ -76,3 +76,42 @@ export function clearInterview(sessionId?: string): void {
   sessionStorage.removeItem(CONTEXT_KEY);
   if (sessionId) sessionStorage.removeItem(progressKey(sessionId));
 }
+
+/**
+ * What the student picked, saved before the session exists.
+ *
+ * The consent notice has to be read and agreed to *before* `/interviews/start`, because
+ * the backend refuses a proctored session without a current consent. So the chosen role
+ * is parked here, the student reads the notice on `/pre-interview`, and the session is
+ * created when they agree.
+ *
+ * This also stops a token being reserved for someone who then backs out of the checklist:
+ * the reservation used to happen on the dashboard click, and an abandoned session blocked
+ * the next one until it timed out.
+ */
+export interface PendingInterview {
+  jdId?: string;
+  customJdId?: string;
+  company: string;
+  role: string;
+}
+
+const PENDING_KEY = "pp.interview.pending";
+
+export function savePendingInterview(pending: PendingInterview): void {
+  sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+}
+
+export function getPendingInterview(): PendingInterview | null {
+  const raw = sessionStorage.getItem(PENDING_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as PendingInterview;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingInterview(): void {
+  sessionStorage.removeItem(PENDING_KEY);
+}

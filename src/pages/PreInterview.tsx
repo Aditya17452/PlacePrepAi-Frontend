@@ -4,8 +4,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, Circle, ChevronRight, Mic, Monitor, Wifi, Clock, Brain, MessageSquare, AlertCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Navbar from "@/components/layout/Navbar";
-import { getInterviewContext } from "@/lib/interviewStore";
+import {
+  clearPendingInterview,
+  getPendingInterview,
+  saveInterviewContext,
+} from "@/lib/interviewStore";
 import { displayName, getUser } from "@/lib/session";
+import { ApiError } from "@/lib/api/client";
+import { getConsents, recordConsent, startInterview } from "@/services/api";
 
 const INSTRUCTIONS = [
   {
@@ -63,15 +69,36 @@ const PreInterview = () => {
   const navigate = useNavigate();
   const [checked, setChecked] = useState<boolean[]>(new Array(INSTRUCTIONS.length).fill(false));
 
-  const ctx = getInterviewContext();
+  const pending = getPendingInterview();
   const studentName = displayName(getUser()?.name) || "Candidate";
-  const company = ctx?.company || "Company";
-  const role = ctx?.role || "Role";
-  const sessionId = ctx?.sessionId;
+  const company = pending?.company || "Company";
+  const role = pending?.role || "Role";
+
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState("");
+  // The notice version in force, read from the server so a stale build cannot record
+  // agreement to text it never displayed.
+  const [consentVersion, setConsentVersion] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!sessionId) navigate("/dashboard", { replace: true });
-  }, [sessionId, navigate]);
+    if (!pending) navigate("/dashboard", { replace: true });
+  }, [pending, navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getConsents()
+      .then(list => {
+        if (cancelled) return;
+        const proctoring = list.find(c => c.kind === "proctoring");
+        setConsentVersion(proctoring?.current_version ?? null);
+      })
+      .catch(() => {
+        /* Non-fatal: the server supplies its own current version on POST. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -100,15 +127,47 @@ const PreInterview = () => {
   };
 
   const handleStart = async () => {
-    if (!allChecked) return;
-    if (!sessionId) { navigate("/dashboard"); return; }
-    // Full screen needs a user gesture, so it is requested here, on the click.
+    if (!allChecked || starting) return;
+    if (!pending) { navigate("/dashboard"); return; }
+
+    setError("");
+    setStarting(true);
+
+    // Full screen needs a user gesture, so it is requested synchronously on the click,
+    // before any await — asking after a network round trip is refused by the browser.
     try {
       if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
     } catch {
-      /* Browser refused (e.g. iOS Safari). The interview still runs; exits are just not detectable. */
+      /* Refused (e.g. iOS Safari). The interview still runs; exits are just not detectable. */
     }
-    navigate("/interview");
+
+    try {
+      // Consent first: the backend refuses a proctored session without a current one,
+      // and recording it after the session existed would be recording it too late.
+      await recordConsent("proctoring", consentVersion ?? "", true);
+
+      const data = await startInterview({
+        jdId: pending.jdId,
+        customJdId: pending.customJdId,
+      });
+      saveInterviewContext(data);
+      clearPendingInterview();
+      navigate("/interview");
+    } catch (err) {
+      const e = err as Error;
+      if (err instanceof ApiError && err.status === 402) {
+        setError(`${e.message} You can buy a plan from the Plans page.`);
+      } else if (err instanceof ApiError && err.status === 409) {
+        setError(e.message);
+      } else {
+        setError(e.message || "Could not start the interview. Please try again.");
+      }
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    } finally {
+      setStarting(false);
+    }
   };
 
   return (
@@ -206,6 +265,17 @@ const PreInterview = () => {
           </span>
         </div>
 
+        {/* Start failure — a refused consent, no tokens, or an interview already open */}
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-3 p-4 mb-4 rounded-xl bg-red-500/10 border border-red-500/20"
+          >
+            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-red-200">{error}</p>
+          </div>
+        )}
+
         {/* Start button */}
         <AnimatePresence>
           <motion.div
@@ -214,10 +284,12 @@ const PreInterview = () => {
           >
             <Button
               onClick={handleStart}
-              disabled={!allChecked}
+              disabled={!allChecked || starting}
               className="w-full h-14 text-base font-bold gap-2 bg-primary hover:bg-primary/90 disabled:cursor-not-allowed"
             >
-              {allChecked ? (
+              {starting ? (
+                "Starting your interview…"
+              ) : allChecked ? (
                 <>
                   Start Interview <ChevronRight className="w-5 h-5" />
                 </>

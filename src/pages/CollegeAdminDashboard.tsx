@@ -9,15 +9,16 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Upload, Users, Coins, ShieldCheck, Search } from "lucide-react";
+import { Loader2, Upload, Users, Coins, ShieldCheck, Search, ListOrdered } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { parseCsv } from "@/lib/csv";
 import {
-  createAllowanceGroup, createAllowanceOverride, decideEnrollmentRequest, getCollegeStudents,
-  getEnrollmentRequests, getMyCollege, getStudentHistory, uploadRoster,
-  type AllowanceGroupRequest, type RosterRow, type SessionHistoryItem, type StudentSummary,
+  createAllowanceGroup, createAllowanceOverride, decideEnrollmentRequest, generateShortlist,
+  getCollegeStudents, getEnrollmentRequests, getMyCollege, getStudentHistory, listPresetJDs,
+  uploadRoster, type AllowanceGroupRequest, type RosterRow, type SessionHistoryItem,
+  type ShortlistCandidate, type StudentSummary,
 } from "@/services/api";
 
 const inputCls = "w-full px-3 py-2.5 bg-white border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/25";
@@ -273,6 +274,106 @@ function AllowanceTab({ defaultAllowance, frozen }: { defaultAllowance: number; 
   );
 }
 
+
+// ── Shortlist ────────────────────────────────────────────────────────────────
+// Ranks this college's students against a role using their interview scores.
+// `jd_id` goes as a query parameter, which is what the endpoint expects.
+
+function ShortlistTab() {
+  const [jdId, setJdId] = useState("");
+  const [rows, setRows] = useState<ShortlistCandidate[] | null>(null);
+  const [error, setError] = useState("");
+
+  const jds = useQuery({ queryKey: ["preset-jds"], queryFn: listPresetJDs });
+
+  const run = useMutation({
+    mutationFn: () => generateShortlist(jdId),
+    onSuccess: data => { setRows(data); setError(""); },
+    onError: (e: Error) => { setRows(null); setError(e.message); },
+  });
+
+  const score = (value: number | null) =>
+    value === null || value === undefined ? "—" : Math.round(value);
+
+  return (
+    <div className="space-y-6">
+      <div className="p-5 rounded-xl bg-card border border-border">
+        <div className="flex items-center gap-2 mb-3">
+          <ListOrdered className="w-5 h-5 text-primary" />
+          <h3 className="font-semibold text-foreground">Rank candidates for a role</h3>
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Ranking uses each student's most recent interview. Students who have not
+          interviewed yet appear at the bottom with no scores.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <select
+            className={inputCls}
+            value={jdId}
+            onChange={e => setJdId(e.target.value)}
+            disabled={jds.isLoading}
+          >
+            <option value="">Select a role…</option>
+            {(jds.data ?? []).map(jd => (
+              <option key={jd.id} value={jd.id}>
+                {jd.role} — {jd.company}
+              </option>
+            ))}
+          </select>
+          <Button
+            onClick={() => run.mutate()}
+            disabled={!jdId || run.isPending}
+            className="sm:w-48"
+          >
+            {run.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Generate shortlist"}
+          </Button>
+        </div>
+        {error && <p role="alert" className="text-sm text-red-500 mt-3">{error}</p>}
+      </div>
+
+      {rows && rows.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No students to rank yet. Upload a roster and have students complete an interview.
+        </p>
+      )}
+
+      {rows && rows.length > 0 && (
+        <div className="rounded-xl bg-card border border-border overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-muted-foreground border-b border-border">
+              <tr>
+                <th className="p-3 font-medium">#</th>
+                <th className="p-3 font-medium">Student</th>
+                <th className="p-3 font-medium">Match</th>
+                <th className="p-3 font-medium">Technical</th>
+                <th className="p-3 font-medium">Communication</th>
+                <th className="p-3 font-medium">Integrity</th>
+                <th className="p-3 font-medium">CGPA</th>
+                <th className="p-3 font-medium">Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => (
+                <tr key={row.student_id} className="border-b border-border/50 last:border-0">
+                  <td className="p-3 font-semibold">{row.rank}</td>
+                  <td className="p-3">{row.name}</td>
+                  <td className="p-3 font-semibold text-primary">{row.match_score}</td>
+                  <td className="p-3">{score(row.technical_score)}</td>
+                  <td className="p-3">{score(row.communication_score)}</td>
+                  {/* Shown beside the technical scores, never folded into them. */}
+                  <td className="p-3">{score(row.integrity_score)}</td>
+                  <td className="p-3">{row.cgpa ?? "—"}</td>
+                  <td className="p-3 text-muted-foreground max-w-xs">{row.reasoning}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const CollegeAdminDashboard = () => {
   const college = useQuery({ queryKey: ["college", "me"], queryFn: getMyCollege });
   const c = college.data;
@@ -302,9 +403,11 @@ const CollegeAdminDashboard = () => {
             <TabsTrigger value="students">Students & reports</TabsTrigger>
             <TabsTrigger value="roster">Roster</TabsTrigger>
             <TabsTrigger value="allowance">Allowance</TabsTrigger>
+            <TabsTrigger value="shortlist">Shortlist</TabsTrigger>
           </TabsList>
           <TabsContent value="students" className="mt-6"><StudentsTab /></TabsContent>
           <TabsContent value="roster" className="mt-6"><RosterTab /></TabsContent>
+          <TabsContent value="shortlist" className="mt-6"><ShortlistTab /></TabsContent>
           <TabsContent value="allowance" className="mt-6">
             <AllowanceTab defaultAllowance={c?.monthly_allowance_default ?? 4} frozen={Boolean(c?.distribution_frozen)} />
           </TabsContent>

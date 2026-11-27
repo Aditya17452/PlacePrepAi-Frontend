@@ -5,13 +5,14 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, Coins, Loader2, Users, Activity, IndianRupee } from "lucide-react";
+import { Building2, Coins, Loader2, Users, Activity, IndianRupee, ShieldCheck } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  deactivateCollege, enrollCollege, freezeCollege, getAuditLog, getPlatformStats, getTokenLogs,
-  grantCollegeTokens, listColleges, revokeCollegeTokens, verifyCollegeDomain, type College,
+  deactivateCollege, enrollCollege, freezeCollege, getAuditLog, getMe, getPlatformStats,
+  getTokenLogs, grantCollegeTokens, listColleges, mfaConfirm, mfaSetup, revokeCollegeTokens,
+  verifyCollegeDomain, type College, type MfaSetup,
 } from "@/services/api";
 
 const inputCls = "w-full px-3 py-2.5 bg-white border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/25";
@@ -170,6 +171,118 @@ function LogsTab() {
   );
 }
 
+
+// ── Two-factor authentication ────────────────────────────────────────────────
+// TOTP is mandatory for admin accounts (PLAN.md §7.1). Verification already existed at
+// login; this is the enrolment half, which was missing — so the rule was unenforceable.
+
+function MfaTab() {
+  const [setup, setSetup] = useState<MfaSetup | null>(null);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe });
+
+  const begin = useMutation({
+    mutationFn: mfaSetup,
+    onSuccess: data => { setSetup(data); setError(""); },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const confirm = useMutation({
+    mutationFn: () => mfaConfirm(code),
+    onSuccess: () => { setDone(true); setError(""); },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  if (me.data?.mfa_enabled) {
+    return (
+      <div className="p-6 rounded-xl bg-card border border-border max-w-xl">
+        <div className="flex items-center gap-2 mb-2">
+          <ShieldCheck className="w-5 h-5 text-green-500" />
+          <h3 className="font-semibold text-foreground">Two-factor authentication is on</h3>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Your authenticator code is required at every sign-in. To move to a new phone, ask
+          another admin to clear <code>mfa_secret</code> and <code>mfa_enabled</code> on
+          your account — the steps are in <code>RUNBOOK.md</code>.
+        </p>
+      </div>
+    );
+  }
+
+  if (done) {
+    return (
+      <div className="p-6 rounded-xl bg-green-500/10 border border-green-500/20 max-w-xl">
+        <h3 className="font-semibold text-foreground mb-1">Two-factor authentication enabled</h3>
+        <p className="text-sm text-muted-foreground">
+          You have been signed out everywhere. Sign in again with your authenticator code.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 rounded-xl bg-card border border-border max-w-xl space-y-4">
+      <div>
+        <h3 className="font-semibold text-foreground mb-1">Set up two-factor authentication</h3>
+        <p className="text-sm text-muted-foreground">
+          Required for admin accounts. You will be signed out of other sessions once it is on.
+        </p>
+      </div>
+
+      {!setup ? (
+        <Button onClick={() => begin.mutate()} disabled={begin.isPending}>
+          {begin.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Start setup"}
+        </Button>
+      ) : (
+        <>
+          <div>
+            <p className="text-sm text-foreground mb-1">
+              Add this account to your authenticator app, then enter the 6-digit code.
+            </p>
+            <p className="text-xs text-muted-foreground mb-2">
+              Scan is not available here — paste this setup key into the app instead. It is
+              shown once.
+            </p>
+            {/* Shown once, and useless without the account password. */}
+            <code className="block p-3 rounded-lg bg-muted text-xs break-all select-all">
+              {setup.secret}
+            </code>
+            <a
+              href={setup.otpauth_uri}
+              className="inline-block mt-2 text-xs text-primary underline"
+            >
+              Open in your authenticator app
+            </a>
+          </div>
+
+          <div className="flex gap-2">
+            <input
+              className={inputCls}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="123456"
+              value={code}
+              onChange={e => setCode(e.target.value.replace(/\D/g, ""))}
+            />
+            <Button
+              onClick={() => confirm.mutate()}
+              disabled={code.length !== 6 || confirm.isPending}
+            >
+              {confirm.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirm"}
+            </Button>
+          </div>
+        </>
+      )}
+
+      {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
+    </div>
+  );
+}
+
+
 const AdminDashboard = () => (
   <div className="min-h-screen bg-background">
     <Navbar />
@@ -181,9 +294,11 @@ const AdminDashboard = () => (
         <TabsList>
           <TabsTrigger value="colleges">Colleges & tokens</TabsTrigger>
           <TabsTrigger value="logs">Audit & ledger</TabsTrigger>
+          <TabsTrigger value="security">Security</TabsTrigger>
         </TabsList>
         <TabsContent value="colleges" className="mt-6"><CollegesTab /></TabsContent>
         <TabsContent value="logs" className="mt-6"><LogsTab /></TabsContent>
+        <TabsContent value="security" className="mt-6"><MfaTab /></TabsContent>
       </Tabs>
     </div>
   </div>

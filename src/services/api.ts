@@ -37,6 +37,20 @@ export type RosterUploadResponse = S["RosterUploadResponse"];
 export type AllowanceGroupRequest = S["AllowanceGroupRequest"];
 export type AllowanceOverrideRequest = S["AllowanceOverrideRequest"];
 export type PlatformStats = S["PlatformStatsResponse"];
+export type ConsentKind = S["ConsentRequest"]["kind"];
+export type ConsentStatus = S["ConsentStatusOut"];
+export type MfaSetup = S["MfaSetupResponse"];
+export type ShortlistCandidate = {
+  rank: number;
+  student_id: string;
+  name: string;
+  match_score: number;
+  cgpa: number | null;
+  reasoning: string;
+  technical_score: number | null;
+  communication_score: number | null;
+  integrity_score: number | null;
+};
 export type EnrollCollegeRequest = S["EnrollCollegeRequest"];
 export type AuditLogEntry = S["AuditLogOut"];
 export type SimpleOk = S["SimpleOk"];
@@ -170,7 +184,29 @@ export const decideEnrollmentRequest = (requestId: string, approve: boolean) =>
   });
 
 export const generateShortlist = (jdId: string) =>
-  request<Record<string, unknown>[]>("/officer/shortlist", { method: "POST", query: { jd_id: jdId } });
+  // jd_id is a query parameter on the backend, not a JSON body — sending it as a body
+  // is what made the old version 422 on every call.
+  request<ShortlistCandidate[]>("/officer/shortlist", { method: "POST", query: { jd_id: jdId } });
+
+// ── Consent ──────────────────────────────────────────────────────────────────
+
+export const getConsents = () => request<ConsentStatus[]>("/consents");
+
+/**
+ * Record or withdraw a consent.
+ *
+ * The version is echoed from `getConsents()` so the server can tell a stale client from
+ * an up-to-date one; the server stores its own current version either way.
+ */
+export const recordConsent = (kind: ConsentKind, version: string, granted = true) =>
+  request<SimpleOk>("/consents", { method: "POST", body: { kind, version, granted } });
+
+// ── TOTP enrolment (admins) ──────────────────────────────────────────────────
+
+export const mfaSetup = () => request<MfaSetup>("/auth/mfa/setup", { method: "POST" });
+
+export const mfaConfirm = (code: string) =>
+  request<SimpleOk>("/auth/mfa/confirm", { method: "POST", body: { code } });
 
 export const getCollegePool = () => request<College>("/college/pool");
 

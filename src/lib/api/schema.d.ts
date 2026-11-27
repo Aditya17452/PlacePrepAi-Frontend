@@ -175,6 +175,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/mfa/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mfa Setup
+         * @description Generate a TOTP secret and the otpauth URI for an authenticator app.
+         *
+         *     The secret is stored but `mfa_enabled` stays false until `/mfa/confirm` proves the
+         *     authenticator works — otherwise a mistyped setup would lock the admin out of their
+         *     own account on the next sign-in.
+         *
+         *     Calling this again before confirming issues a fresh secret, which is what someone
+         *     who abandoned a half-finished enrolment expects. Once enabled it refuses, so an
+         *     attacker holding a live session cannot quietly swap the second factor.
+         */
+        post: operations["mfa_setup_api_auth_mfa_setup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/mfa/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mfa Confirm
+         * @description Verify a code from the authenticator and turn TOTP on.
+         *
+         *     Signs the account out everywhere on success: the next sign-in must present the
+         *     second factor, so a session created before enrolment cannot outlive it.
+         */
+        post: operations["mfa_confirm_api_auth_mfa_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/consents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Consents
+         * @description Which consents this student has, and whether each is for the current notice.
+         */
+        get: operations["my_consents_api_consents_get"];
+        put?: never;
+        /**
+         * Record Consent
+         * @description Grant or withdraw a consent.
+         *
+         *     The version is taken from the server, not the request: a client that sent an old
+         *     version string would otherwise record agreement to a notice it never displayed.
+         *     The request's version is still read, so a stale client is told to reload rather than
+         *     silently recording the wrong thing.
+         */
+        post: operations["record_consent_api_consents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/resume/upload": {
         parameters: {
             query?: never;
@@ -1157,6 +1237,43 @@ export interface components {
              */
             distribution_frozen: boolean;
         };
+        /** ConsentRequest */
+        ConsentRequest: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "proctoring" | "profile_processing" | "college_sharing";
+            /** Version */
+            version: string;
+            /**
+             * Granted
+             * @default true
+             */
+            granted: boolean;
+        };
+        /**
+         * ConsentStatusOut
+         * @description One consent kind and whether this student's agreement is to the current notice.
+         */
+        ConsentStatusOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "proctoring" | "profile_processing" | "college_sharing";
+            /** Current Version */
+            current_version: string;
+            /** Granted Version */
+            granted_version?: string | null;
+            /** Granted At */
+            granted_at?: string | null;
+            /**
+             * Is Current
+             * @default false
+             */
+            is_current: boolean;
+        };
         /**
          * CreateOrderRequest
          * @description Only a plan code. The server looks up price and token count.
@@ -1369,6 +1486,34 @@ export interface components {
              * @default 0
              */
             college_allowance_remaining: number;
+        };
+        /** MfaConfirmRequest */
+        MfaConfirmRequest: {
+            /** Code */
+            code: string;
+        };
+        /**
+         * MfaSetupResponse
+         * @description Enrolment material for an authenticator app.
+         *
+         *     The secret is returned once, at enrolment, because that is the only way to put it
+         *     into an authenticator. It is the caller's own second factor and is useless without
+         *     their password.
+         */
+        MfaSetupResponse: {
+            /** Secret */
+            secret: string;
+            /** Otpauth Uri */
+            otpauth_uri: string;
+            /** Issuer */
+            issuer: string;
+            /** Account */
+            account: string;
+            /**
+             * Already Enabled
+             * @default false
+             */
+            already_enabled: boolean;
         };
         /**
          * OAuthExchangeRequest
@@ -2169,6 +2314,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mfa_setup_api_auth_mfa_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MfaSetupResponse"];
+                };
+            };
+        };
+    };
+    mfa_confirm_api_auth_mfa_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimpleOk"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_consents_api_consents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentStatusOut"][];
+                };
+            };
+        };
+    };
+    record_consent_api_consents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimpleOk"];
                 };
             };
             /** @description Validation Error */

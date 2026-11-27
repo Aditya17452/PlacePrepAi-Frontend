@@ -24,7 +24,7 @@ import {
 } from "@/services/api";
 import { ApiError } from "@/lib/api/client";
 import { getUser } from "@/lib/session";
-import { saveInterviewContext } from "@/lib/interviewStore";
+import { savePendingInterview } from "@/lib/interviewStore";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -240,18 +240,19 @@ const JDUploadSection = () => {
 
     setIsStarting(jd.id);
     try {
-      const data = await startInterview({ customJdId: jd.id });
-      saveInterviewContext(data);
-      setCredits(data.tokens_remaining);
+      // The session is created on the pre-interview page, after the student has read
+      // and accepted the proctoring notice — the backend refuses a proctored session
+      // without a current consent, and this also avoids reserving a token for someone
+      // who then backs out of the checklist.
+      savePendingInterview({
+        customJdId: jd.id,
+        company: jd.company_name,
+        role: jd.role_title,
+      });
       navigate("/pre-interview");
     } catch (err) {
       const e = err as Error;
-      if (err instanceof ApiError && err.status === 402) {
-        setCreditError(`${e.message} You can buy a plan from the Plans page.`);
-      } else {
-        setCreditError(e.message || "Failed to start interview. Please try again.");
-      }
-      getWallet().then(w => setCredits(w.total_available)).catch(() => {});
+      setCreditError(e.message || "Could not open the interview checklist. Please try again.");
     } finally {
       setIsStarting(null);
     }
