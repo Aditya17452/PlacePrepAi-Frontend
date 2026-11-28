@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -7,8 +7,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Navbar from "@/components/layout/Navbar";
+import { ShieldCheck } from "lucide-react";
+import { getMyHistory, getReport, type Report as ReportResponse } from "@/services/api";
+import { ApiError } from "@/lib/api/client";
+import { getUser } from "@/lib/session";
 
-const API = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+/** Stop polling after ~5 minutes; the evaluation job is retried server-side by the sweeper. */
+const MAX_POLLS = 75;
 
 interface ReportData {
   status: string;
@@ -26,7 +31,50 @@ interface ReportData {
   summary: string;
   tips: string[];
   topics: { name: string; score: number; feedback: string }[];
-  questionBreakdown: { question: string; answer: string; turn: number; phase: string }[];
+  questionBreakdown: { question: string; answer: string; turn: number; phase: string; score?: number | null; weight?: number | null; competency?: string | null; rationale?: string | null }[];
+  integrityScore: number | null;
+  integrityTimeline: { type?: string; occurrences?: number; penalty?: number }[];
+  proctored: boolean;
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  tab_switch: "Tab switches",
+  window_blur: "Window lost focus",
+  fullscreen_exit: "Left full screen",
+  no_face: "Face not visible",
+  multiple_faces: "Multiple people visible",
+  gaze_away: "Looking away",
+  face_mismatch: "Different person detected",
+  paste_attempt: "Paste attempts",
+  devtools_open: "Developer tools opened",
+  phone_detected: "Phone detected",
+  second_voice: "Second voice",
+  mic_muted: "Microphone muted",
+};
+
+function normalizeReport(r: ReportResponse): ReportData {
+  const c = r.categories ?? {};
+  return {
+    status: r.status,
+    overallScore: Math.round(r.overallScore ?? 0),
+    verdict: r.verdict ?? "Needs Work",
+    categories: {
+      technicalAccuracy: Math.round(c.technicalAccuracy ?? 0),
+      communication: Math.round(c.communication ?? 0),
+      problemSolving: Math.round(c.problemSolving ?? 0),
+      confidence: Math.round(c.confidence ?? 0),
+      bodyLanguage: Math.round(c.bodyLanguage ?? 0),
+    },
+    strengths: r.strengths ?? [],
+    improvements: r.improvements ?? [],
+    summary: r.summary ?? "",
+    tips: r.tips ?? [],
+    topics: (r.topics ?? []) as unknown as ReportData["topics"],
+    questionBreakdown: (r.questionBreakdown ?? []).map((q) => ({ ...q, phase: q.phase ?? "technical" })),
+    integrityScore: r.integrityScore ?? null,
+    integrityTimeline: (r.integrityTimeline ?? []) as unknown as ReportData["integrityTimeline"],
+    proctored: r.proctored,
+  };
 }
 
 const ScoreRing = ({ score, size = 120, color }: { score: number; size?: number; color: string }) => {
@@ -69,7 +117,7 @@ const getVerdict = (verdict: string) => {
 const Report = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const sessionId = params.get("session") || sessionStorage.getItem("session_id") || "";
+  const sessionId = params.get("session") || "";
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [polling, setPolling] = useState(0);
@@ -77,29 +125,60 @@ const Report = () => {
   const [msg, setMsg] = useState("");
   const [expandedTranscript, setExpandedTranscript] = useState<number | null>(null);
 
-  const studentName = sessionStorage.getItem("student_name") || "Candidate";
-  const company = sessionStorage.getItem("interview_company") || "Company";
-  const role = sessionStorage.getItem("interview_role") || "Role";
+  const viewer = getUser();
+  const isStudent = viewer?.role === "student";
+  const [meta, setMeta] = useState<{ company: string; role: string }>({ company: "", role: "" });
+  const [loadError, setLoadError] = useState("");
+  const studentName = isStudent ? viewer?.name || "Candidate" : "Interview Report";
+  const company = meta.company || "Company";
+  const role = meta.role || "Role";
 
   useEffect(() => {
-    if (!sessionId) { navigate("/dashboard"); return; }
-    fetchReport();
+    if (!sessionId) { navigate(viewer ? "/" : "/login"); return; }
+    if (isStudent) {
+      getMyHistory()
+        .then((items) => {
+          const item = items.find((i) => i.id === sessionId);
+          if (item) setMeta({ company: item.company, role: item.role });
+        })
+        .catch(() => {});
+    }
+    pollsRef.current = 0;
+    void fetchReport();
+    return () => clearTimeout(pollTimerRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  const pollsRef = useRef(0);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
   const fetchReport = async () => {
+    clearTimeout(pollTimerRef.current);
+    setLoadError("");
     try {
-      const r = await fetch(`${API}/interviews/${sessionId}/report`);
-      const data = await r.json();
+      const data = await getReport(sessionId);
       if (data.status === "processing") {
-        setPolling(p => p + 1);
-        setTimeout(fetchReport, 3000);
+        pollsRef.current += 1;
+        setPolling(pollsRef.current);
+        if (pollsRef.current < MAX_POLLS) {
+          pollTimerRef.current = setTimeout(fetchReport, 4000);
+        } else {
+          setLoadError("Your report is taking longer than usual. Please check back in a few minutes.");
+          setLoading(false);
+        }
         return;
       }
-      setReport(data);
-    } catch (e) {
-      setTimeout(fetchReport, 4000);
-    } finally {
+      setReport(normalizeReport(data));
       setLoading(false);
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
+        setLoadError("This report was not found, or you do not have access to it.");
+        setLoading(false);
+        return;
+      }
+      pollsRef.current += 1;
+      if (pollsRef.current < MAX_POLLS) pollTimerRef.current = setTimeout(fetchReport, 5000);
+      else { setLoadError((e as Error).message); setLoading(false); }
     }
   };
 
@@ -386,12 +465,12 @@ const Report = () => {
         <div className="max-w-md mx-auto text-center pt-40 px-4">
           <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-foreground mb-2">Report Not Available</h2>
-          <p className="text-muted-foreground mb-6">The evaluation could not be completed. Please try again.</p>
+          <p className="text-muted-foreground mb-6">{loadError || "The evaluation could not be completed. Please try again."}</p>
           <div className="flex gap-3 justify-center">
-            <Button onClick={() => navigate("/dashboard")} variant="outline" className="gap-2">
-              <ArrowLeft className="w-4 h-4" /> Dashboard
+            <Button onClick={() => navigate(-1)} variant="outline" className="gap-2">
+              <ArrowLeft className="w-4 h-4" /> Back
             </Button>
-            <Button onClick={fetchReport} className="gap-2">
+            <Button onClick={() => { pollsRef.current = 0; setLoading(true); void fetchReport(); }} className="gap-2">
               <RefreshCw className="w-4 h-4" /> Retry
             </Button>
           </div>
@@ -446,6 +525,41 @@ const Report = () => {
             <Star className="w-4 h-4" /> {report.verdict}
           </div>
         </motion.div>
+
+        {/* Integrity (kept separate from the interview score) */}
+        {report.proctored && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="p-6 rounded-2xl bg-card border border-border mb-6"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-bold text-foreground flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-primary" /> Integrity
+              </h2>
+              <span className="text-2xl font-black" style={{ color: getColor(report.integrityScore ?? 100) }}>
+                {report.integrityScore == null ? "—" : Math.round(report.integrityScore)}
+                <span className="text-sm text-muted-foreground font-normal">/100</span>
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              Based on camera and browser signals during the interview. Shown separately; it does not change your interview score.
+            </p>
+            {report.integrityTimeline.length === 0 ? (
+              <p className="text-sm text-green-600">No integrity issues were recorded.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {report.integrityTimeline.map((item, i) => (
+                  <li key={i} className="flex justify-between text-sm">
+                    <span className="text-foreground/80">{EVENT_LABELS[item.type ?? ""] ?? item.type}{item.occurrences ? ` × ${item.occurrences}` : ""}</span>
+                    {typeof item.penalty === "number" && <span className="text-muted-foreground">−{item.penalty}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </motion.div>
+        )}
 
         {/* Category bars */}
         <motion.div
@@ -608,9 +722,17 @@ const Report = () => {
                   <div key={idx} className="p-4 rounded-xl bg-secondary/20 border border-border text-sm">
                     <div className="flex items-start justify-between gap-4 mb-2">
                       <p className="font-semibold text-primary"><span className="text-muted-foreground mr-1">Q{q.turn}:</span> {q.question}</p>
-                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded flex-shrink-0 ${q.phase === 'warmup' ? 'bg-blue-500/20 text-blue-400' : q.phase === 'technical' ? 'bg-purple-500/20 text-purple-400' : 'bg-green-500/20 text-green-400'}`}>
-                        {q.phase}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {typeof q.score === "number" && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-secondary text-foreground">{Math.round(q.score)}/100</span>
+                        )}
+                        {typeof q.weight === "number" && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-secondary text-muted-foreground">weight {Math.round(q.weight * 100)}%</span>
+                        )}
+                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${q.phase === 'warmup' ? 'bg-blue-500/20 text-blue-400' : q.phase === 'technical' ? 'bg-purple-500/20 text-purple-400' : 'bg-green-500/20 text-green-400'}`}>
+                          {q.phase}
+                        </span>
+                      </div>
                     </div>
                     <div className="text-foreground/80 pl-6 border-l-2 border-border/50">
                       <span className="text-muted-foreground font-semibold mr-1">A:</span> 

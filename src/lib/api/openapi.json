@@ -1,0 +1,4662 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PlacePrep AI",
+    "version": "2.0.0"
+  },
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Register",
+        "description": "Create a direct student account.\n\nSignup is open (PLAN.md \u00a70 decision 1): anyone may register as a direct student.\nCollege membership is *not* decided here \u2014 it is attempted after the contact details\nhave been verified, because an email address someone typed proves nothing.",
+        "operationId": "register_api_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout-all": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout Everywhere",
+        "description": "Invalidate every outstanding token for the caller by bumping the token version.",
+        "operationId": "logout_everywhere_api_auth_logout_all_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Me",
+        "operationId": "me_api_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/otp/send": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Send Otp",
+        "operationId": "send_otp_api_auth_otp_send_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendOtpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/otp/verify": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Verify Otp",
+        "operationId": "verify_otp_api_auth_otp_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyOtpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/google": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Google Login",
+        "operationId": "google_login_api_auth_google_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthUrlResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/google/callback": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Google Callback",
+        "description": "Exchange Google's code, then redirect with a one-time hand-off code.\n\nNo token, role or name goes into the redirect URL.",
+        "operationId": "google_callback_api_auth_google_callback_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/google/exchange": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Google Exchange",
+        "description": "Swap the single-use hand-off code for an access token.",
+        "operationId": "google_exchange_api_auth_google_exchange_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/mfa/setup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Mfa Setup",
+        "description": "Generate a TOTP secret and the otpauth URI for an authenticator app.\n\nThe secret is stored but `mfa_enabled` stays false until `/mfa/confirm` proves the\nauthenticator works \u2014 otherwise a mistyped setup would lock the admin out of their\nown account on the next sign-in.\n\nCalling this again before confirming issues a fresh secret, which is what someone\nwho abandoned a half-finished enrolment expects. Once enabled it refuses, so an\nattacker holding a live session cannot quietly swap the second factor.",
+        "operationId": "mfa_setup_api_auth_mfa_setup_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MfaSetupResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/mfa/confirm": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Mfa Confirm",
+        "description": "Verify a code from the authenticator and turn TOTP on.\n\nSigns the account out everywhere on success: the next sign-in must present the\nsecond factor, so a session created before enrolment cannot outlive it.",
+        "operationId": "mfa_confirm_api_auth_mfa_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/consents": {
+      "get": {
+        "tags": [
+          "consents"
+        ],
+        "summary": "My Consents",
+        "description": "Which consents this student has, and whether each is for the current notice.",
+        "operationId": "my_consents_api_consents_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConsentStatusOut"
+                  },
+                  "type": "array",
+                  "title": "Response My Consents Api Consents Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "consents"
+        ],
+        "summary": "Record Consent",
+        "description": "Grant or withdraw a consent.\n\nThe version is taken from the server, not the request: a client that sent an old\nversion string would otherwise record agreement to a notice it never displayed.\nThe request's version is still read, so a stale client is told to reload rather than\nsilently recording the wrong thing.",
+        "operationId": "record_consent_api_consents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resume/upload": {
+      "post": {
+        "tags": [
+          "resume"
+        ],
+        "summary": "Upload Resume",
+        "description": "Store a resume, enrich it from the candidate's public profiles, match it to roles.",
+        "operationId": "upload_resume_api_resume_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_resume_api_resume_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeUploadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resume/jds": {
+      "get": {
+        "tags": [
+          "resume"
+        ],
+        "summary": "List Jds",
+        "operationId": "list_jds_api_resume_jds_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JDListItem"
+                  },
+                  "type": "array",
+                  "title": "Response List Jds Api Resume Jds Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jd/submit": {
+      "post": {
+        "tags": [
+          "job_descriptions"
+        ],
+        "summary": "Submit Jd",
+        "description": "Save a pasted JD for the authenticated student and queue the resume match.",
+        "operationId": "submit_jd_api_jd_submit_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitJDRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentJDOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jd/mine": {
+      "get": {
+        "tags": [
+          "job_descriptions"
+        ],
+        "summary": "My Jds",
+        "operationId": "my_jds_api_jd_mine_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StudentJDOut"
+                  },
+                  "type": "array",
+                  "title": "Response My Jds Api Jd Mine Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jd/{jd_id}": {
+      "get": {
+        "tags": [
+          "job_descriptions"
+        ],
+        "summary": "Jd Status",
+        "operationId": "jd_status_api_jd__jd_id__get",
+        "parameters": [
+          {
+            "name": "jd_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jd Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentJDOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "job_descriptions"
+        ],
+        "summary": "Delete Jd",
+        "operationId": "delete_jd_api_jd__jd_id__delete",
+        "parameters": [
+          {
+            "name": "jd_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jd Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/interviews/start": {
+      "post": {
+        "tags": [
+          "interviews"
+        ],
+        "summary": "Start Interview",
+        "description": "Create a session and reserve one token, in a single transaction.",
+        "operationId": "start_interview_api_interviews_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartInterviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartInterviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/interviews/{session_id}/turns": {
+      "post": {
+        "tags": [
+          "interviews"
+        ],
+        "summary": "Submit Turn",
+        "description": "Submit one answer and get the next question.\n\nReplaces the WebSocket `turn_complete` message. Idempotent on `turn_id`: resubmitting\nthe same turn returns the same next question instead of advancing the interview.",
+        "operationId": "submit_turn_api_interviews__session_id__turns_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitTurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitTurnResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/interviews/{session_id}/end": {
+      "post": {
+        "tags": [
+          "interviews"
+        ],
+        "summary": "End Interview",
+        "operationId": "end_interview_api_interviews__session_id__end_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EndInterviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/interviews/{session_id}/report": {
+      "get": {
+        "tags": [
+          "interviews"
+        ],
+        "summary": "Get Report",
+        "description": "A report is readable by its owner, their college admin, or a platform admin.",
+        "operationId": "get_report_api_interviews__session_id__report_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/interviews/history": {
+      "get": {
+        "tags": [
+          "interviews"
+        ],
+        "summary": "My History",
+        "operationId": "my_history_api_interviews_history_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionHistoryItem"
+                  },
+                  "type": "array",
+                  "title": "Response My History Api Interviews History Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/interviews/history/{student_id}": {
+      "get": {
+        "tags": [
+          "interviews"
+        ],
+        "summary": "Student History",
+        "operationId": "student_history_api_interviews_history__student_id__get",
+        "parameters": [
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Student Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionHistoryItem"
+                  },
+                  "title": "Response Student History Api Interviews History  Student Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/interviews/{session_id}/proctoring": {
+      "post": {
+        "tags": [
+          "proctoring"
+        ],
+        "summary": "Submit Proctoring",
+        "description": "Accept a batch of client observations and return the server's decision.",
+        "operationId": "submit_proctoring_api_interviews__session_id__proctoring_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProctoringBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProctoringBatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tokens/wallet": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "My Wallet",
+        "operationId": "my_wallet_api_tokens_wallet_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tokens/ledger": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "My Ledger",
+        "description": "The caller's own token history.\n\nIncludes spends funded by their college, which live on the college's wallet \u2014 matched\nby `on_behalf_of` so a student can see them without being able to read the pool.",
+        "operationId": "my_ledger_api_tokens_ledger_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LedgerEntryOut"
+                  },
+                  "title": "Response My Ledger Api Tokens Ledger Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/plans": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "List Plans",
+        "description": "Public: the direct-student plans that are currently on sale.",
+        "operationId": "list_plans_api_payments_plans_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Plans Api Payments Plans Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/create-order": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Create Order",
+        "description": "Create a Razorpay order for the authenticated student.\n\nThe amount is read from the `plans` table, never from the request, so a tampered\nclient cannot buy the Rs 999 bundle for Rs 1.",
+        "operationId": "create_order_api_payments_create_order_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateOrderResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/status/{order_id}": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Payment Status",
+        "description": "What the browser polls after Razorpay's checkout closes.\n\nRead-only on purpose. The old `/verify` endpoint both checked a signature and granted\ncredits, which made it replayable; granting now happens only in the webhook.",
+        "operationId": "payment_status_api_payments_status__order_id__get",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/history": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Payment History",
+        "operationId": "payment_history_api_payments_history_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PaymentStatusResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Payment History Api Payments History Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/refund": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Refund",
+        "description": "Admin-initiated refund. Revokes unused tokens from that purchase lot.",
+        "operationId": "refund_api_payments_refund_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/officer/me/college": {
+      "get": {
+        "tags": [
+          "college_admin"
+        ],
+        "summary": "My College",
+        "operationId": "my_college_api_officer_me_college_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollegeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/officer/students": {
+      "get": {
+        "tags": [
+          "college_admin"
+        ],
+        "summary": "List Students",
+        "description": "Students of the caller's college, with their latest result.",
+        "operationId": "list_students_api_officer_students_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StudentSummaryOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Students Api Officer Students Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/officer/roster": {
+      "post": {
+        "tags": [
+          "college_admin"
+        ],
+        "summary": "Upload Roster",
+        "description": "Upload or update the student roster.\n\nA roster row is the college's claim that someone belongs to it; it only takes effect\nonce that person verifies the matching email or phone (PLAN.md \u00a77.3).",
+        "operationId": "upload_roster_api_officer_roster_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RosterUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RosterUploadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/officer/enrollment-requests": {
+      "get": {
+        "tags": [
+          "college_admin"
+        ],
+        "summary": "Pending Enrollments",
+        "operationId": "pending_enrollments_api_officer_enrollment_requests_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response Pending Enrollments Api Officer Enrollment Requests Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/officer/enrollment-requests/{request_id}": {
+      "post": {
+        "tags": [
+          "college_admin"
+        ],
+        "summary": "Decide Enrollment",
+        "operationId": "decide_enrollment_api_officer_enrollment_requests__request_id__post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          },
+          {
+            "name": "approve",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "title": "Approve"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/officer/shortlist": {
+      "post": {
+        "tags": [
+          "college_admin"
+        ],
+        "summary": "Generate Shortlist",
+        "description": "Rank the college's students against a role.\n\nNote: `jd_id` is a query parameter. The frontend was sending it as a JSON body, so\nevery call 422'd; `src/services/api.ts` is fixed to match in the same change.",
+        "operationId": "generate_shortlist_api_officer_shortlist_post",
+        "parameters": [
+          {
+            "name": "jd_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jd Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "title": "Response Generate Shortlist Api Officer Shortlist Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/officer/credits": {
+      "get": {
+        "tags": [
+          "college_admin"
+        ],
+        "summary": "College Token Overview",
+        "description": "Pool balance and each student's remaining allowance.\n\nKept at `/credits` for frontend compatibility; the underlying model is the token\nledger, and a college admin can no longer mint anything \u2014 only distribute allowances.",
+        "operationId": "college_token_overview_api_officer_credits_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response College Token Overview Api Officer Credits Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/college/pool": {
+      "get": {
+        "tags": [
+          "college_admin"
+        ],
+        "summary": "College Pool",
+        "operationId": "college_pool_api_college_pool_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollegeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/college/allowance-groups": {
+      "post": {
+        "tags": [
+          "college_admin"
+        ],
+        "summary": "Create Allowance Group",
+        "description": "Create an allowance group from roster filters and populate its membership.\n\nThis caps how much of the pool each member may draw; it moves no tokens, so the sum\nof allowances across groups may exceed the pool.",
+        "operationId": "create_allowance_group_api_college_allowance_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AllowanceGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/college/allowance-overrides": {
+      "post": {
+        "tags": [
+          "college_admin"
+        ],
+        "summary": "Create Allowance Override",
+        "description": "An individual top-up, or a time-boxed drive allowance.",
+        "operationId": "create_allowance_override_api_college_allowance_overrides_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AllowanceOverrideRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/super/stats": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Platform Stats",
+        "operationId": "platform_stats_api_super_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformStatsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/super/colleges": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Colleges",
+        "operationId": "list_colleges_api_super_colleges_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CollegeOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Colleges Api Super Colleges Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/super/colleges/enroll": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Enroll College",
+        "description": "Create a college and invite its admin.\n\nNo tokens are granted here \u2014 that is a separate, audited action with a reason\n(`POST /api/admin/tokens/grant`), so a pool can never appear without a record of who\ncreated it and why.",
+        "operationId": "enroll_college_api_super_colleges_enroll_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollCollegeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/super/colleges/{college_id}/deactivate": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Deactivate College",
+        "description": "Soft-delete. Hard deletion is a separate purge job after the retention period.",
+        "operationId": "deactivate_college_api_super_colleges__college_id__deactivate_post",
+        "parameters": [
+          {
+            "name": "college_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "College Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/super/colleges/{college_id}/verify-domain": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Verify Domain",
+        "description": "Mark a college's domain as verified, enabling domain-based enrolment.\n\nDeliberately a manual admin action: the check is a DNS TXT record or written\nconfirmation from the college, done out of band. Students can never self-add a domain,\nwhich is what stops a lookalike like `indoreinstitute-edu.com`.",
+        "operationId": "verify_domain_api_super_colleges__college_id__verify_domain_post",
+        "parameters": [
+          {
+            "name": "college_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "College Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/super/colleges/{college_id}/freeze": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Freeze Distribution",
+        "operationId": "freeze_distribution_api_super_colleges__college_id__freeze_post",
+        "parameters": [
+          {
+            "name": "college_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "College Id"
+            }
+          },
+          {
+            "name": "frozen",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "title": "Frozen"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/super/invite/accept": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Accept Invite",
+        "description": "A college admin sets their own password from the invite link.",
+        "operationId": "accept_invite_api_super_invite_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInviteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/super/audit-log": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Audit Log",
+        "operationId": "audit_log_api_super_audit_log_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditLogOut"
+                  },
+                  "title": "Response Audit Log Api Super Audit Log Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/super/credit-logs": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Token Ledger",
+        "description": "Every token movement, newest first. Kept at the old path for the admin panel.",
+        "operationId": "token_ledger_api_super_credit_logs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LedgerEntryOut"
+                  },
+                  "title": "Response Token Ledger Api Super Credit Logs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/super/config-check": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Config Check",
+        "description": "What is and is not configured, for the launch checklist.\n\nReports presence only \u2014 never a secret's value.",
+        "operationId": "config_check_api_super_config_check_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "title": "Response Config Check Api Super Config Check Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/tokens/grant": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Grant College Tokens",
+        "operationId": "grant_college_tokens_api_admin_tokens_grant_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantTokensRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/tokens/revoke": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Revoke College Tokens",
+        "operationId": "revoke_college_tokens_api_admin_tokens_revoke_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeTokensRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimpleOk"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Health",
+        "description": "Liveness. Deliberately checks nothing external.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Ready",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Root",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Root  Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AcceptInviteRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 16,
+            "title": "Code"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "Password"
+          },
+          "mfa_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 6,
+                "minLength": 6
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfa Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "password"
+        ],
+        "title": "AcceptInviteRequest"
+      },
+      "AllowanceGroupRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "per_student_allowance": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Per Student Allowance"
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "month",
+              "term"
+            ],
+            "title": "Period",
+            "default": "month"
+          },
+          "filters": {
+            "type": "object",
+            "title": "Filters"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "per_student_allowance"
+        ],
+        "title": "AllowanceGroupRequest"
+      },
+      "AllowanceOverrideRequest": {
+        "properties": {
+          "student_id": {
+            "type": "string",
+            "maxLength": 36,
+            "title": "Student Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "topup",
+              "drive"
+            ],
+            "title": "Kind",
+            "default": "topup"
+          },
+          "extra_allowance": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Extra Allowance"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Reason"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "jd_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jd Id"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "student_id",
+          "extra_allowance",
+          "reason"
+        ],
+        "title": "AllowanceOverrideRequest"
+      },
+      "AuditLogOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "actor_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Role"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "actor_id",
+          "actor_role",
+          "action",
+          "target",
+          "detail",
+          "created_at"
+        ],
+        "title": "AuditLogOut"
+      },
+      "Body_upload_resume_api_resume_upload_post": {
+        "properties": {
+          "resume": {
+            "type": "string",
+            "format": "binary",
+            "title": "Resume"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resume"
+        ],
+        "title": "Body_upload_resume_api_resume_upload_post"
+      },
+      "CollegeOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "pool_balance": {
+            "type": "integer",
+            "title": "Pool Balance",
+            "default": 0
+          },
+          "pool_granted": {
+            "type": "integer",
+            "title": "Pool Granted",
+            "default": 0
+          },
+          "students": {
+            "type": "integer",
+            "title": "Students",
+            "default": 0
+          },
+          "monthly_allowance_default": {
+            "type": "integer",
+            "title": "Monthly Allowance Default",
+            "default": 4
+          },
+          "daily_interview_cap": {
+            "type": "integer",
+            "title": "Daily Interview Cap",
+            "default": 3
+          },
+          "distribution_frozen": {
+            "type": "boolean",
+            "title": "Distribution Frozen",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "CollegeOut"
+      },
+      "ConsentRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "proctoring",
+              "profile_processing",
+              "college_sharing"
+            ],
+            "title": "Kind"
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 20,
+            "title": "Version"
+          },
+          "granted": {
+            "type": "boolean",
+            "title": "Granted",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "version"
+        ],
+        "title": "ConsentRequest"
+      },
+      "ConsentStatusOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "proctoring",
+              "profile_processing",
+              "college_sharing"
+            ],
+            "title": "Kind"
+          },
+          "current_version": {
+            "type": "string",
+            "title": "Current Version"
+          },
+          "granted_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Granted Version"
+          },
+          "granted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Granted At"
+          },
+          "is_current": {
+            "type": "boolean",
+            "title": "Is Current",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "current_version"
+        ],
+        "title": "ConsentStatusOut",
+        "description": "One consent kind and whether this student's agreement is to the current notice."
+      },
+      "CreateOrderRequest": {
+        "properties": {
+          "plan_code": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Plan Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plan_code"
+        ],
+        "title": "CreateOrderRequest",
+        "description": "Only a plan code. The server looks up price and token count."
+      },
+      "CreateOrderResponse": {
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "title": "Order Id"
+          },
+          "amount_paise": {
+            "type": "integer",
+            "title": "Amount Paise"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "razorpay_key_id": {
+            "type": "string",
+            "title": "Razorpay Key Id"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_id",
+          "amount_paise",
+          "currency",
+          "razorpay_key_id",
+          "plan"
+        ],
+        "title": "CreateOrderResponse"
+      },
+      "EndInterviewRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "student_ended",
+              "completed",
+              "client_error"
+            ],
+            "title": "Reason",
+            "default": "student_ended"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "EndInterviewRequest"
+      },
+      "EnrollCollegeRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "admin_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Admin Name"
+          },
+          "admin_email": {
+            "type": "string",
+            "format": "email",
+            "title": "Admin Email"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "monthly_allowance_default": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Monthly Allowance Default",
+            "default": 4
+          },
+          "daily_interview_cap": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Daily Interview Cap",
+            "default": 3
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "admin_name",
+          "admin_email"
+        ],
+        "title": "EnrollCollegeRequest",
+        "description": "Creates the college and *invites* its admin.\n\nNo password field: we never set a password on someone else's behalf. The invited\ncollege admin receives a one-time link and chooses their own."
+      },
+      "FeedbackOut": {
+        "properties": {
+          "tip": {
+            "type": "string",
+            "title": "Tip"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "neutral",
+              "needs_work"
+            ],
+            "title": "Tone"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tip",
+          "tone"
+        ],
+        "title": "FeedbackOut"
+      },
+      "GrantTokensRequest": {
+        "properties": {
+          "college_id": {
+            "type": "string",
+            "maxLength": 36,
+            "title": "College Id"
+          },
+          "tokens": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Tokens"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Reason"
+          },
+          "validity_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1095.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validity Days"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "college_id",
+          "tokens",
+          "reason"
+        ],
+        "title": "GrantTokensRequest",
+        "description": "Admin-only. A reason is mandatory \u2014 it lands in the audit log and the ledger."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status"
+          },
+          "env": {
+            "type": "string",
+            "title": "Env"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "env",
+          "version"
+        ],
+        "title": "HealthResponse"
+      },
+      "JDListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "company": {
+            "type": "string",
+            "title": "Company"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "company",
+          "role"
+        ],
+        "title": "JDListItem"
+      },
+      "JDMatchOut": {
+        "properties": {
+          "company": {
+            "type": "string",
+            "title": "Company"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "matchScore": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Matchscore"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "matchedSkills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Matchedskills"
+          },
+          "missingSkills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missingskills"
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "default": ""
+          },
+          "jdId": {
+            "type": "string",
+            "title": "Jdid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company",
+          "role",
+          "matchScore",
+          "status",
+          "jdId"
+        ],
+        "title": "JDMatchOut"
+      },
+      "LedgerEntryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "amount": {
+            "type": "integer",
+            "title": "Amount"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "amount",
+          "reason",
+          "created_at"
+        ],
+        "title": "LedgerEntryOut"
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password"
+          },
+          "mfa_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 6,
+                "minLength": 6
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfa Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest"
+      },
+      "MeResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "college_admin",
+              "admin"
+            ],
+            "title": "Role"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "cgpa": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cgpa"
+          },
+          "college_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College Id"
+          },
+          "college_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College Name"
+          },
+          "email_verified": {
+            "type": "boolean",
+            "title": "Email Verified",
+            "default": false
+          },
+          "phone_verified": {
+            "type": "boolean",
+            "title": "Phone Verified",
+            "default": false
+          },
+          "mfa_enabled": {
+            "type": "boolean",
+            "title": "Mfa Enabled",
+            "default": false
+          },
+          "tokens_available": {
+            "type": "integer",
+            "title": "Tokens Available",
+            "default": 0
+          },
+          "personal_tokens": {
+            "type": "integer",
+            "title": "Personal Tokens",
+            "default": 0
+          },
+          "college_allowance_remaining": {
+            "type": "integer",
+            "title": "College Allowance Remaining",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role"
+        ],
+        "title": "MeResponse"
+      },
+      "MfaConfirmRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^\\d{6}$",
+            "title": "Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "MfaConfirmRequest"
+      },
+      "MfaSetupResponse": {
+        "properties": {
+          "secret": {
+            "type": "string",
+            "title": "Secret"
+          },
+          "otpauth_uri": {
+            "type": "string",
+            "title": "Otpauth Uri"
+          },
+          "issuer": {
+            "type": "string",
+            "title": "Issuer"
+          },
+          "account": {
+            "type": "string",
+            "title": "Account"
+          },
+          "already_enabled": {
+            "type": "boolean",
+            "title": "Already Enabled",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "secret",
+          "otpauth_uri",
+          "issuer",
+          "account"
+        ],
+        "title": "MfaSetupResponse",
+        "description": "Enrolment material for an authenticator app.\n\nThe secret is returned once, at enrolment, because that is the only way to put it\ninto an authenticator. It is the caller's own second factor and is useless without\ntheir password."
+      },
+      "OAuthExchangeRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 16,
+            "title": "Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "OAuthExchangeRequest",
+        "description": "Exchanges the one-time code from the OAuth redirect for a real token.\n\nThe callback no longer puts a JWT in the redirect URL, where it would land in browser\nhistory, the Referer header and proxy logs."
+      },
+      "OAuthUrlResponse": {
+        "properties": {
+          "auth_url": {
+            "type": "string",
+            "title": "Auth Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "auth_url"
+        ],
+        "title": "OAuthUrlResponse"
+      },
+      "PaymentStatusResponse": {
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "title": "Order Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "tokens_granted": {
+            "type": "integer",
+            "title": "Tokens Granted"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_id",
+          "status",
+          "tokens_granted",
+          "message"
+        ],
+        "title": "PaymentStatusResponse",
+        "description": "What the client-side callback gets: status only.\n\nTokens are granted by the webhook, so this endpoint cannot be replayed for credit."
+      },
+      "PlanOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "price_paise": {
+            "type": "integer",
+            "title": "Price Paise"
+          },
+          "tokens": {
+            "type": "integer",
+            "title": "Tokens"
+          },
+          "validity_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validity Days"
+          },
+          "is_recommended": {
+            "type": "boolean",
+            "title": "Is Recommended",
+            "default": false
+          },
+          "requires_phone_verification": {
+            "type": "boolean",
+            "title": "Requires Phone Verification",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "price_paise",
+          "tokens",
+          "validity_days"
+        ],
+        "title": "PlanOut"
+      },
+      "PlatformStatsResponse": {
+        "properties": {
+          "total_students": {
+            "type": "integer",
+            "title": "Total Students"
+          },
+          "total_colleges": {
+            "type": "integer",
+            "title": "Total Colleges"
+          },
+          "total_interviews": {
+            "type": "integer",
+            "title": "Total Interviews"
+          },
+          "completed_interviews": {
+            "type": "integer",
+            "title": "Completed Interviews"
+          },
+          "tokens_outstanding": {
+            "type": "integer",
+            "title": "Tokens Outstanding"
+          },
+          "tokens_consumed": {
+            "type": "integer",
+            "title": "Tokens Consumed"
+          },
+          "revenue_paise": {
+            "type": "integer",
+            "title": "Revenue Paise"
+          },
+          "cost_per_interview_inr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Per Interview Inr"
+          },
+          "llm_cost_usd_30d": {
+            "type": "number",
+            "title": "Llm Cost Usd 30D",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_students",
+          "total_colleges",
+          "total_interviews",
+          "completed_interviews",
+          "tokens_outstanding",
+          "tokens_consumed",
+          "revenue_paise"
+        ],
+        "title": "PlatformStatsResponse"
+      },
+      "ProctoringBatchRequest": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/ProctoringEventIn"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Events"
+          },
+          "vision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VisionScores"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "events"
+        ],
+        "title": "ProctoringBatchRequest",
+        "description": "Events are batched over HTTP every few seconds instead of streamed."
+      },
+      "ProctoringBatchResponse": {
+        "properties": {
+          "accepted": {
+            "type": "integer",
+            "title": "Accepted"
+          },
+          "terminate": {
+            "type": "boolean",
+            "title": "Terminate",
+            "default": false
+          },
+          "terminate_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminate Reason"
+          },
+          "warnings_issued": {
+            "type": "integer",
+            "title": "Warnings Issued",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "title": "ProctoringBatchResponse"
+      },
+      "ProctoringEventIn": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Type"
+          },
+          "severity": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Severity"
+          },
+          "client_ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Client Ts"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type",
+          "severity",
+          "client_ts"
+        ],
+        "title": "ProctoringEventIn"
+      },
+      "QuestionBreakdownOut": {
+        "properties": {
+          "turn": {
+            "type": "integer",
+            "title": "Turn"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "competency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Competency"
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turn",
+          "question",
+          "answer"
+        ],
+        "title": "QuestionBreakdownOut"
+      },
+      "ReadyResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "degraded"
+            ],
+            "title": "Status"
+          },
+          "database": {
+            "type": "boolean",
+            "title": "Database"
+          },
+          "redis": {
+            "type": "boolean",
+            "title": "Redis"
+          },
+          "detail": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "database",
+          "redis"
+        ],
+        "title": "ReadyResponse"
+      },
+      "RefundRequest": {
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Payment Id"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Reason"
+          },
+          "amount_paise": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Paise"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "payment_id",
+          "reason"
+        ],
+        "title": "RefundRequest"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "Password"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "cgpa": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cgpa"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "year_of_passing": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 1990.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year Of Passing"
+          },
+          "join_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Join Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "email",
+          "password"
+        ],
+        "title": "RegisterRequest",
+        "description": "Note the absence of a `role` field \u2014 roles are assigned by the server only."
+      },
+      "ReportCategories": {
+        "properties": {
+          "technicalAccuracy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Technicalaccuracy"
+          },
+          "communication": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Communication"
+          },
+          "problemSolving": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problemsolving"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "bodyLanguage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bodylanguage"
+          }
+        },
+        "type": "object",
+        "title": "ReportCategories"
+      },
+      "ReportResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "complete",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "overallScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overallscore"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          },
+          "categories": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportCategories"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "strengths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Strengths"
+          },
+          "improvements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Improvements"
+          },
+          "tips": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tips"
+          },
+          "topics": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Topics"
+          },
+          "questionBreakdown": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionBreakdownOut"
+            },
+            "type": "array",
+            "title": "Questionbreakdown"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "integrityScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Integrityscore"
+          },
+          "integrityTimeline": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Integritytimeline"
+          },
+          "proctored": {
+            "type": "boolean",
+            "title": "Proctored",
+            "default": true
+          },
+          "scoringVersion": {
+            "type": "integer",
+            "title": "Scoringversion",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ReportResponse"
+      },
+      "ResumeUploadResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "error",
+              "processing"
+            ],
+            "title": "Status"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/JDMatchOut"
+            },
+            "type": "array",
+            "title": "Suggestions"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "profile_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ResumeUploadResponse"
+      },
+      "RevokeTokensRequest": {
+        "properties": {
+          "college_id": {
+            "type": "string",
+            "maxLength": 36,
+            "title": "College Id"
+          },
+          "tokens": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Tokens"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "college_id",
+          "tokens",
+          "reason"
+        ],
+        "title": "RevokeTokensRequest"
+      },
+      "RosterRowIn": {
+        "properties": {
+          "enrollment_no": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrollment No"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "batch": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RosterRowIn"
+      },
+      "RosterUploadRequest": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RosterRowIn"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "minItems": 1,
+            "title": "Rows"
+          },
+          "replace_existing": {
+            "type": "boolean",
+            "title": "Replace Existing",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "title": "RosterUploadRequest"
+      },
+      "RosterUploadResponse": {
+        "properties": {
+          "created": {
+            "type": "integer",
+            "title": "Created"
+          },
+          "updated": {
+            "type": "integer",
+            "title": "Updated"
+          },
+          "deactivated": {
+            "type": "integer",
+            "title": "Deactivated"
+          },
+          "skipped": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Skipped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created",
+          "updated",
+          "deactivated"
+        ],
+        "title": "RosterUploadResponse"
+      },
+      "SendOtpRequest": {
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "phone"
+            ],
+            "title": "Channel"
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "channel"
+        ],
+        "title": "SendOtpRequest"
+      },
+      "SessionHistoryItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "company": {
+            "type": "string",
+            "title": "Company"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "company",
+          "role",
+          "date",
+          "status"
+        ],
+        "title": "SessionHistoryItem"
+      },
+      "SimpleOk": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "title": "SimpleOk"
+      },
+      "StartInterviewRequest": {
+        "properties": {
+          "jd_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jd Id"
+          },
+          "custom_jd_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Jd Id"
+          },
+          "proctoring_enabled": {
+            "type": "boolean",
+            "title": "Proctoring Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "StartInterviewRequest",
+        "description": "Exactly one of `jd_id` or `custom_jd_id`. No `student_id` \u2014 that comes from the\nbearer token, so an interview can no longer be attributed to another student."
+      },
+      "StartInterviewResponse": {
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "title": "Sessionid"
+          },
+          "openingQuestion": {
+            "type": "string",
+            "title": "Openingquestion"
+          },
+          "company": {
+            "type": "string",
+            "title": "Company"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "maxQuestions": {
+            "type": "integer",
+            "title": "Maxquestions"
+          },
+          "maxMinutes": {
+            "type": "integer",
+            "title": "Maxminutes"
+          },
+          "tokens_remaining": {
+            "type": "integer",
+            "title": "Tokens Remaining",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "sessionId",
+          "openingQuestion",
+          "company",
+          "role",
+          "maxQuestions",
+          "maxMinutes"
+        ],
+        "title": "StartInterviewResponse"
+      },
+      "StudentJDOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "company_name": {
+            "type": "string",
+            "title": "Company Name"
+          },
+          "role_title": {
+            "type": "string",
+            "title": "Role Title"
+          },
+          "match_pct": {
+            "type": "integer",
+            "title": "Match Pct",
+            "default": 0
+          },
+          "matched_skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Matched Skills"
+          },
+          "missing_skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Skills"
+          },
+          "advice": {
+            "type": "string",
+            "title": "Advice",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "company_name",
+          "role_title",
+          "status"
+        ],
+        "title": "StudentJDOut"
+      },
+      "StudentSummaryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "cgpa": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cgpa"
+          },
+          "interviews_taken": {
+            "type": "integer",
+            "title": "Interviews Taken",
+            "default": 0
+          },
+          "latest_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Score"
+          },
+          "latest_integrity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Integrity"
+          },
+          "allowance_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowance Remaining"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email"
+        ],
+        "title": "StudentSummaryOut"
+      },
+      "SubmitJDRequest": {
+        "properties": {
+          "company_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Company Name"
+          },
+          "role_title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Role Title"
+          },
+          "jd_text": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 50,
+            "title": "Jd Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company_name",
+          "role_title",
+          "jd_text"
+        ],
+        "title": "SubmitJDRequest"
+      },
+      "SubmitTurnRequest": {
+        "properties": {
+          "turn_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 8,
+            "title": "Turn Id"
+          },
+          "transcript": {
+            "type": "string",
+            "maxLength": 20000,
+            "title": "Transcript",
+            "default": ""
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8000000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio"
+          },
+          "answered_question": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answered Question"
+          },
+          "client_debug": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Debug"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "turn_id"
+        ],
+        "title": "SubmitTurnRequest",
+        "description": "One answer. Replaces the WebSocket `turn_complete` message (PLAN.md \u00a70.1).\n\n`turn_id` is generated by the client and makes submission idempotent: a retry after a\ndropped connection returns the original next question instead of burning a turn."
+      },
+      "SubmitTurnResponse": {
+        "properties": {
+          "question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "warmup",
+              "technical",
+              "closing",
+              "complete"
+            ],
+            "title": "Phase"
+          },
+          "questions_asked": {
+            "type": "integer",
+            "title": "Questions Asked"
+          },
+          "questions_remaining": {
+            "type": "integer",
+            "title": "Questions Remaining"
+          },
+          "session_complete": {
+            "type": "boolean",
+            "title": "Session Complete"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transcript_used": {
+            "type": "string",
+            "title": "Transcript Used",
+            "default": ""
+          },
+          "token_consumed": {
+            "type": "boolean",
+            "title": "Token Consumed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "question",
+          "phase",
+          "questions_asked",
+          "questions_remaining",
+          "session_complete"
+        ],
+        "title": "SubmitTurnResponse"
+      },
+      "TokenResponse": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "college_admin",
+              "admin"
+            ],
+            "title": "Role"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "needs_verification": {
+            "type": "boolean",
+            "title": "Needs Verification",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "role",
+          "name",
+          "id"
+        ],
+        "title": "TokenResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VerifyOtpRequest": {
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "phone"
+            ],
+            "title": "Channel"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 8,
+            "minLength": 4,
+            "title": "Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "channel",
+          "code"
+        ],
+        "title": "VerifyOtpRequest"
+      },
+      "VisionScores": {
+        "properties": {
+          "posture_score": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Posture Score"
+          },
+          "eye_contact_score": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Eye Contact Score"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "posture_score",
+          "eye_contact_score"
+        ],
+        "title": "VisionScores"
+      },
+      "WalletResponse": {
+        "properties": {
+          "personal_balance": {
+            "type": "integer",
+            "title": "Personal Balance"
+          },
+          "personal_reserved": {
+            "type": "integer",
+            "title": "Personal Reserved"
+          },
+          "college_allowance_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College Allowance Remaining"
+          },
+          "college_pool_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "College Pool Remaining"
+          },
+          "total_available": {
+            "type": "integer",
+            "title": "Total Available"
+          },
+          "next_expiry": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Expiry"
+          },
+          "next_expiry_qty": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Expiry Qty"
+          }
+        },
+        "type": "object",
+        "required": [
+          "personal_balance",
+          "personal_reserved",
+          "total_available"
+        ],
+        "title": "WalletResponse"
+      }
+    }
+  }
+}

@@ -1,72 +1,66 @@
 /**
- * AuthCallback.tsx
- * Handles the redirect from the backend Google OAuth callback.
- * The backend redirects to:  /auth/callback?token=...&role=...&name=...&id=...
- * This page reads those params, stores them, and navigates appropriately.
+ * Google OAuth landing page.
+ *
+ * The backend redirects here with a short-lived one-time `code` (never the JWT itself, so
+ * no credential lands in browser history or Referer headers). We exchange it over POST.
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
+import { exchangeOAuthCode } from "@/services/api";
+import { getUser, homeFor } from "@/lib/session";
 
 const AuthCallback = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const [failed, setFailed] = useState("");
+  const started = useRef(false);
 
   useEffect(() => {
-    const token = params.get("token");
-    const role  = params.get("role");
-    const name  = params.get("name");
-    const id    = params.get("id");
+    if (started.current) return; // StrictMode double-invoke would burn the one-time code.
+    started.current = true;
+
+    const code = params.get("code");
     const error = params.get("error");
-
-    // ── Error cases ──────────────────────────────────────────────────────────
-    if (error === "domain_not_allowed") {
-      navigate("/login?error=domain_not_allowed");
-      return;
-    }
-    if (error) {
-      navigate("/login?error=signin_failed");
+    if (error || !code) {
+      navigate(`/login?error=${encodeURIComponent(error || "google_failed")}`, { replace: true });
       return;
     }
 
-    // ── Success ───────────────────────────────────────────────────────────────
-    if (token && role) {
-      // Store everything the rest of the app expects
-      sessionStorage.setItem("token",        token);
-      sessionStorage.setItem("role",         role);
-      sessionStorage.setItem("student_name", name ?? "");
-      sessionStorage.setItem("name",         name ?? "");
-      sessionStorage.setItem("student_id",   id   ?? "");
-
-      // Route based on role
-      if      (role === "super_admin")                         navigate("/super-admin");
-      else if (role === "college_admin" || role === "officer") navigate("/officer");
-      else                                                     navigate("/dashboard");
-    } else {
-      // Something unexpected — bail to login
-      navigate("/login");
-    }
-  }, []);
+    exchangeOAuthCode(code)
+      .then((data) => {
+        const role = getUser()?.role ?? "student";
+        if (data.needs_verification && role === "student") navigate("/verify", { replace: true });
+        else navigate(homeFor(role), { replace: true });
+      })
+      .catch((e: Error) => setFailed(e.message || "Sign-in failed."));
+  }, [navigate, params]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="text-center"
-      >
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          className="w-10 h-10 border-[3px] border-primary border-t-transparent rounded-full mx-auto mb-5"
-        />
-        <p className="text-foreground font-semibold">Signing you in...</p>
-        <p className="text-sm text-muted-foreground mt-1">Just a moment</p>
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
+        {failed ? (
+          <>
+            <p className="text-foreground font-semibold">{failed}</p>
+            <button onClick={() => navigate("/login")} className="mt-4 text-sm text-primary font-semibold hover:underline">
+              Back to sign in
+            </button>
+          </>
+        ) : (
+          <>
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+              className="w-10 h-10 border-[3px] border-primary border-t-transparent rounded-full mx-auto mb-5"
+            />
+            <p className="text-foreground font-semibold">Signing you in...</p>
+            <p className="text-sm text-muted-foreground mt-1">Just a moment</p>
+          </>
+        )}
       </motion.div>
     </div>
   );
 };
 
 export default AuthCallback;
-

@@ -1,18 +1,47 @@
+/**
+ * Live interview room.
+ *
+ * Talks to the backend over plain HTTP, one request per answer:
+ *   POST /interviews/{id}/turns   { turn_id, transcript, audio?, answered_question }
+ * `turn_id` is generated here and reused on every retry, so a dropped request never
+ * double-advances the interview or loses an answer. Progress is mirrored to
+ * sessionStorage, so a refresh resumes where the student was.
+ *
+ * Proctoring signals are reported to the server (see useProctoring). The server computes
+ * integrity and is the only one that can stop an interview for proctoring reasons; the
+ * browser shows warnings but never ends a session on its own.
+ */
+
 import Navbar from "@/components/layout/Navbar";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import { Phone, Clock, Lightbulb, Camera, Send, Volume2, Mic, MicOff, Eye, EyeOff, AlertTriangle } from "lucide-react";
+import { Phone, Clock, Lightbulb, Camera, Send, Volume2, Mic, MicOff, Eye, EyeOff, AlertTriangle, RefreshCw, WifiOff } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Progress } from "@/components/ui/progress";
-import { endInterview } from "@/services/api";
+import { endInterview, submitTurn, type SubmitTurnResponse } from "@/services/api";
+import { ApiError, newId, withRetry } from "@/lib/api/client";
+import { displayName, getUser } from "@/lib/session";
+import {
+  clearInterview, getInterviewContext, loadProgress, saveProgress,
+  type ChatMessage, type InterviewProgress,
+} from "@/lib/interviewStore";
+import { useProctoring } from "@/hooks/useProctoring";
 
-const MAX_QUESTIONS = 12;
-const MAX_WARNINGS = 3;
+/** A look-away / missing face lasting this long shows a warning to the student. */
 const LOOK_AWAY_THRESHOLD_MS = 5000;
-const AUTO_END_AFTER_MS = 10000;
+/** While a condition holds, re-report it (with its running duration) this often. */
+const CONDITION_REPORT_EVERY_MS = 5000;
+const FACE_CHECK_INTERVAL_MS = 500;
 
-interface Message { role: "ai" | "user"; text: string; }
+type Message = ChatMessage;
+type Condition = "no_face" | "multiple_faces" | "gaze_away";
+
+interface PendingTurn {
+  turnId: string;
+  transcript: string;
+  answeredQuestion: string;
+}
 
 const speakWithGirlVoice = (text: string, onEnd?: () => void) => {
   if (!window.speechSynthesis) { onEnd?.(); return; }
@@ -71,7 +100,6 @@ const speakWithGirlVoice = (text: string, onEnd?: () => void) => {
 
       if (chosen) {
         utter.voice = chosen;
-        console.log(`Using voice: ${chosen.name}`);
       }
     };
 
@@ -113,9 +141,9 @@ const speakWithGirlVoice = (text: string, onEnd?: () => void) => {
 };
 
 const WarningOverlay = ({
-  warningCount, isFinalWarning, countdown, reason, onDismiss
+  flagCount, reason, actionLabel, onDismiss,
 }: {
-  warningCount: number; isFinalWarning: boolean; countdown: number; reason: string; onDismiss: () => void;
+  flagCount: number; reason: string; actionLabel: string; onDismiss: () => void;
 }) => (
   <motion.div
     initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -123,61 +151,53 @@ const WarningOverlay = ({
   >
     <motion.div
       initial={{ scale: 0.85, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.85, y: 20 }}
-      className={`relative w-full max-w-md mx-4 p-8 rounded-2xl border-2 shadow-2xl text-center
-        ${isFinalWarning ? "bg-red-950 border-red-500 shadow-red-500/20" : "bg-card border-yellow-500/60 shadow-yellow-500/10"}`}
+      className="relative w-full max-w-md mx-4 p-8 rounded-2xl border-2 shadow-2xl text-center bg-card border-yellow-500/60 shadow-yellow-500/10"
     >
-      <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center
-        ${isFinalWarning ? "bg-red-500/20" : "bg-yellow-500/20"}`}>
-        <AlertTriangle className={`w-8 h-8 ${isFinalWarning ? "text-red-400" : "text-yellow-400"}`} />
+      <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center bg-yellow-500/20">
+        <AlertTriangle className="w-8 h-8 text-yellow-400" />
       </div>
-      <div className="flex justify-center gap-2 mb-4">
-        {[1,2,3].map(i => (
-          <div key={i} className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold
-            ${i <= warningCount ? isFinalWarning ? "bg-red-500 text-white" : "bg-yellow-500 text-black" : "bg-muted text-muted-foreground"}`}>
-            {i}
-          </div>
-        ))}
-      </div>
-      <h2 className={`text-xl font-black mb-2 ${isFinalWarning ? "text-red-400" : "text-yellow-400"}`}>
-        {isFinalWarning ? " Final Warning!" : `Warning ${warningCount} of ${MAX_WARNINGS}`}
-      </h2>
+      <h2 className="text-xl font-black mb-2 text-yellow-500">Attention flag {flagCount}</h2>
       <p className="text-muted-foreground text-sm mb-2">{reason}</p>
-      {isFinalWarning ? (
-        <>
-          <p className="text-red-300 text-sm font-medium mb-4">
-            This is your last warning. The interview will end automatically if this happens again.
-          </p>
-          <div className="text-4xl font-black text-red-400 mb-4">{countdown}s</div>
-          <p className="text-xs text-muted-foreground mb-6">Interview ends in {countdown} seconds unless you dismiss this</p>
-        </>
-      ) : (
-        <p className="text-sm text-foreground/80 mb-6 mt-3">
-          Please keep your attention on the screen during the interview.<br/>
-          <span className="text-yellow-400 font-semibold">{MAX_WARNINGS - warningCount} warning(s) remaining</span> before the interview ends.
-        </p>
-      )}
-      <Button onClick={onDismiss}
-        className={`w-full font-bold ${isFinalWarning ? "bg-red-500 hover:bg-red-600 text-white" : "bg-yellow-500 hover:bg-yellow-600 text-black"}`}>
-        I understand — continue interview
+      <p className="text-sm text-foreground/80 mb-6 mt-3">
+        This has been recorded and lowers your integrity score, which is shown on your report and to your placement cell.
+        Please keep your attention on the interview.
+      </p>
+      <Button onClick={onDismiss} className="w-full font-bold bg-yellow-500 hover:bg-yellow-600 text-black">
+        {actionLabel}
       </Button>
     </motion.div>
   </motion.div>
 );
 
+const formatElapsed = (ms: number) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+};
+
 const InterviewRoom = () => {
   const navigate = useNavigate();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const ctx = getInterviewContext();
+  const sessionId = ctx?.sessionId ?? "";
+  const maxQuestions = ctx?.maxQuestions ?? 12;
+  const openingQ = ctx?.openingQuestion || "Tell me about yourself.";
+  const role = ctx?.role || "Session";
+  const studentName = displayName(getUser()?.name);
+  const greetingText = `Hello ${studentName}! Welcome to your PlacePrep AI mock interview for the ${role} position. I'm your AI interviewer today. Take a breath, relax, and answer clearly. Let's begin!`;
+
+  const restored = useRef<InterviewProgress | null>(sessionId ? loadProgress(sessionId) : null).current;
+
+  const [messages, setMessages] = useState<Message[]>(restored?.messages ?? []);
   const [feedback, setFeedback] = useState<{ tip: string; tone: string }[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
+  const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
+  const [connectionProblem, setConnectionProblem] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [questionsAsked, setQuestionsAsked] = useState(0);
-  const [phase, setPhase] = useState("warmup");
+  const [questionsAsked, setQuestionsAsked] = useState(restored?.questionsAsked ?? 1);
+  const [phase, setPhase] = useState(restored?.phase ?? "warmup");
   const [elapsed, setElapsed] = useState("00:00");
-  const [postureTip, setPostureTip] = useState("");
-  const [statusMsg, setStatusMsg] = useState("Connecting...");
+  const [statusMsg, setStatusMsg] = useState("Getting ready...");
   const [textInput, setTextInput] = useState("");
-  const [greeted, setGreeted] = useState(false);
+  const [greeted, setGreeted] = useState(restored?.greeted ?? false);
   const [sessionEnded, setSessionEnded] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
@@ -193,11 +213,10 @@ const InterviewRoom = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const pendingAudioRef = useRef<string | null>(null);
-  const [warningCount, setWarningCount] = useState(0);
+  const [flagCount, setFlagCount] = useState(0);
   const [showWarning, setShowWarning] = useState(false);
   const [warningReason, setWarningReason] = useState("");
-  const [isFinalWarning, setIsFinalWarning] = useState(false);
-  const [countdown, setCountdown] = useState(10);
+  const [warningAction, setWarningAction] = useState<"dismiss" | "fullscreen">("dismiss");
   const [webcamActive, setWebcamActive] = useState(false);
   const [faceDetected, setFaceDetected] = useState(true);
 
@@ -205,33 +224,51 @@ const InterviewRoom = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const faceCheckRef = useRef<any>(null);
-  const lookAwayTimerRef = useRef<any>(null);
-  const watchdogTimerRef = useRef<any>(null);
-  const lastFaceDetectedTimeRef = useRef<number>(Date.now());
+  const conditionTimerRef = useRef<any>(null);
   const hasFirstFrameProcessedRef = useRef(false);
-  const countdownRef = useRef<any>(null);
-  const warningCountRef = useRef(0);
   const sessionEndedRef = useRef(false);
-  const wsRef = useRef<WebSocket | null>(null);
+  const showWarningRef = useRef(false);
+  const greetedRef = useRef(restored?.greeted ?? false);
   const isProcessingRef = useRef(false);
   const timerRef = useRef<any>(null);
-  const startRef = useRef<number>(Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const lastVisionSendRef = useRef<number>(0);
+  const textInputRef = useRef("");
+  const lastQuestionRef = useRef(restored?.lastQuestion ?? openingQ);
+  const pendingTurnRef = useRef<PendingTurn | null>(restored?.pendingTurn ?? null);
+  const pendingTurnAudioRef = useRef<string | null>(null);
+  const progressRef = useRef({ messages, questionsAsked, phase });
+  const handleSubmitRef = useRef<() => void>(() => {});
+  /** When each condition started (ms), and when it was last reported. */
+  const conditionSinceRef = useRef<Record<Condition, number | null>>({ no_face: null, multiple_faces: null, gaze_away: null });
+  const conditionReportedRef = useRef<Record<Condition, number>>({ no_face: 0, multiple_faces: 0, gaze_away: 0 });
+  const conditionWarnedRef = useRef<Record<Condition, boolean>>({ no_face: false, multiple_faces: false, gaze_away: false });
 
-  const sessionId = sessionStorage.getItem("session_id") || "";
-  const openingQ = sessionStorage.getItem("opening_question") || "Tell me about yourself.";
-  const role = sessionStorage.getItem("interview_role") || "Session";
-  const rawStudentName = sessionStorage.getItem("student_name") || "there";
-  // Convert "ADITYA CHOUKSEY" to "Aditya Chouksey" so TTS doesn't spell it out letter by letter
-  const studentName = rawStudentName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-  const company = sessionStorage.getItem("interview_company") || "Company";
-  const greetingText = `Hello ${studentName}! Welcome to your PlacePrepAI mock interview for the ${role} position. I'm your AI interviewer today. Take a breath, relax, and answer clearly. Let's begin!`;
+  textInputRef.current = textInput;
+  showWarningRef.current = showWarning;
+  progressRef.current = { messages, questionsAsked, phase };
+
+  // ── Persistence ────────────────────────────────────────────────────────
+  const persist = useCallback(
+    (patch: Partial<InterviewProgress> = {}) => {
+      if (!sessionId) return;
+      saveProgress(sessionId, {
+        messages: progressRef.current.messages,
+        questionsAsked: progressRef.current.questionsAsked,
+        phase: progressRef.current.phase,
+        lastQuestion: lastQuestionRef.current,
+        greeted: greetedRef.current,
+        pendingTurn: pendingTurnRef.current,
+        ...patch,
+      });
+    },
+    [sessionId],
+  );
+
+  useEffect(() => { persist(); }, [messages, questionsAsked, phase, greeted, persist]);
 
   const markMicStopReason = (reason: string) => {
     micStopReasonRef.current = reason;
-    console.debug(`[MIC_DIAG] stop_reason=${reason} at=${new Date().toISOString()}`);
   };
 
   const speak = (text: string, onEnd?: () => void) => {
@@ -239,98 +276,164 @@ const InterviewRoom = () => {
     speakWithGirlVoice(text, () => { setIsSpeaking(false); onEnd?.(); });
   };
 
-  const triggerWarning = useCallback((reason: string) => {
-    if (sessionEndedRef.current || warningCountRef.current >= MAX_WARNINGS) return;
-    const newCount = warningCountRef.current + 1;
-    warningCountRef.current = newCount;
-    setWarningCount(newCount);
-    setWarningReason(reason);
-    
-    window.speechSynthesis?.cancel();
-    markMicStopReason("attention-warning");
+  const stopMic = () => {
     recognitionRef.current?.stop();
+    isListeningRef.current = false;
     setIsListening(false);
-    if (mediaRecorderRef.current?.state === 'recording') {
+    if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
+  };
 
-    if (newCount >= MAX_WARNINGS) {
-      handleAutoEnd(true);
-      return;
-    }
+  // ── Ending ─────────────────────────────────────────────────────────────
+  const proctoringRef = useRef<ReturnType<typeof useProctoring> | null>(null);
 
+  const finish = useCallback(
+    async (reason: "completed" | "student_ended" | "client_error" | "server_stopped", spokenMessage: string, status: string) => {
+      if (sessionEndedRef.current) return;
+      sessionEndedRef.current = true;
+      setSessionEnded(true);
+      setShowWarning(false);
+      window.speechSynthesis?.cancel();
+      markMicStopReason(`end:${reason}`);
+      stopMic();
+      setStatusMsg(status);
+      clearInterval(timerRef.current);
+
+      const wrapUp = async () => {
+        await proctoringRef.current?.stop().catch(() => {});
+        stopWebcam();
+        if (reason !== "server_stopped") {
+          try { await endInterview(sessionId, reason === "completed" ? "completed" : reason); } catch { /* already ended server-side */ }
+        }
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        clearInterview(sessionId);
+        navigate(`/report?session=${encodeURIComponent(sessionId)}`, { replace: true });
+      };
+
+      if (spokenMessage) speak(spokenMessage, () => setTimeout(() => void wrapUp(), 600));
+      else void wrapUp();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId, navigate],
+  );
+
+  const proctoring = useProctoring({
+    sessionId,
+    enabled: Boolean(sessionId),
+    onTerminate: (reason) =>
+      void finish("server_stopped", `The interview has been stopped. ${reason}`, `Interview stopped — ${reason}`),
+  });
+  proctoringRef.current = proctoring;
+
+  // ── Warnings (shown to the student; recorded server-side) ─────────────
+  const showFlag = useCallback((reason: string, action: "dismiss" | "fullscreen" = "dismiss") => {
+    if (sessionEndedRef.current || showWarningRef.current) return;
+    setFlagCount((c) => c + 1);
+    setWarningReason(reason);
+    setWarningAction(action);
     setShowWarning(true);
-    const warningMsg = `Warning ${newCount} of ${MAX_WARNINGS}. ${reason}. Please keep your attention on the interview.`;
-    speakWithGirlVoice(warningMsg);
+    window.speechSynthesis?.cancel();
+    markMicStopReason("attention-warning");
+    stopMic();
+    speakWithGirlVoice(`${reason} Please keep your attention on the interview.`);
   }, []);
 
   const dismissWarning = () => {
-    clearInterval(countdownRef.current);
+    if (warningAction === "fullscreen" && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    }
     setShowWarning(false);
-    setCountdown(10);
     setTimeout(() => textareaRef.current?.focus(), 200);
   };
 
-  const handleAutoEnd = useCallback((fromWarning = false, customReason?: string) => {
-    if (sessionEndedRef.current) return;
-    sessionEndedRef.current = true;
-    setSessionEnded(true);
-    setShowWarning(false);
-    clearInterval(countdownRef.current);
-    window.speechSynthesis?.cancel();
-    markMicStopReason(fromWarning ? "auto-end-warning" : "session-complete");
-    recognitionRef.current?.stop();
-    const msg = customReason ? customReason : fromWarning
-      ? `The interview has ended due to repeated inattention. Your report will be generated based on answers provided so far.`
-      : `Thank you ${studentName}! That's all 12 questions. Your report is being prepared. Well done!`;
-    setStatusMsg(fromWarning ? "Interview ended — attention violations" : "Interview complete! Generating report...");
-    speak(msg, () => {
-      setTimeout(async () => {
-        wsRef.current?.close();
-        stopWebcam();
-        try { await endInterview(sessionId); } catch (e) { }
-        navigate(`/report?session=${sessionId}`);
-      }, 800);
-    });
-  }, []);
+  // ── Webcam & face analysis ─────────────────────────────────────────────
+  const captureSnapshot = (): string | null => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || video.readyState < 2) return null;
+    canvas.width = 160; canvas.height = 120;
+    const c = canvas.getContext("2d");
+    if (!c) return null;
+    c.drawImage(video, 0, 0, 160, 120);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+    return dataUrl.split(",")[1] ?? null;
+  };
+
+  const setCondition = (condition: Condition, active: boolean) => {
+    const since = conditionSinceRef.current;
+    if (active && since[condition] === null) since[condition] = Date.now();
+    if (!active && since[condition] !== null) {
+      since[condition] = null;
+      conditionWarnedRef.current[condition] = false;
+    }
+  };
+
+  /** Every second: report running conditions with their duration, warn after the threshold. */
+  const startConditionReporter = () => {
+    clearInterval(conditionTimerRef.current);
+    conditionTimerRef.current = setInterval(() => {
+      if (sessionEndedRef.current || !hasFirstFrameProcessedRef.current || !greetedRef.current) return;
+      const now = Date.now();
+      (Object.keys(conditionSinceRef.current) as Condition[]).forEach((condition) => {
+        const since = conditionSinceRef.current[condition];
+        if (since === null) return;
+        const duration = now - since;
+        if (duration < 1500) return; // ignore single-frame blips
+        if (now - conditionReportedRef.current[condition] >= CONDITION_REPORT_EVERY_MS) {
+          conditionReportedRef.current[condition] = now;
+          const severity = condition === "multiple_faces" ? 4 : condition === "no_face" ? 3 : 2;
+          const snapshot = condition === "multiple_faces" && duration < CONDITION_REPORT_EVERY_MS + 1500 ? captureSnapshot() : null;
+          proctoring.report(condition, severity, { duration_ms: duration }, snapshot);
+        }
+        if (duration >= LOOK_AWAY_THRESHOLD_MS && !conditionWarnedRef.current[condition]) {
+          conditionWarnedRef.current[condition] = true;
+          const reasons: Record<Condition, string> = {
+            no_face: "Your face is not visible to the camera.",
+            multiple_faces: "More than one person is visible on camera.",
+            gaze_away: "You appear to be looking away from the screen.",
+          };
+          showFlag(reasons[condition]);
+        }
+      });
+    }, 1000);
+  };
 
   const startWebcam = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 320, height: 240, facingMode: "user" }
+        video: { width: 320, height: 240, facingMode: "user" },
       });
       streamRef.current = stream;
-      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play(); }
+      if (videoRef.current) { videoRef.current.srcObject = stream; videoRef.current.play().catch(() => {}); }
       setWebcamActive(true);
-      startFaceDetection(); // async — runs in background
-    } catch (e) {
-      console.log("Webcam not available — tab detection only");
+      startConditionReporter();
+      void startFaceDetection();
+    } catch {
       setWebcamActive(false);
+      proctoring.report("no_face", 2, { reason: "camera_unavailable" });
     }
   };
 
   const stopWebcam = () => {
+    clearTimeout(faceCheckRef.current);
     clearInterval(faceCheckRef.current);
-    clearInterval(watchdogTimerRef.current);
-    clearTimeout(lookAwayTimerRef.current);
-    streamRef.current?.getTracks().forEach(t => t.stop());
+    clearInterval(conditionTimerRef.current);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     setWebcamActive(false);
   };
 
-  // ── FACE DETECTION — MediaPipe with skin-pixel fallback ──────────────
+  // MediaPipe FaceMesh, with a skin-pixel heuristic when it cannot load.
   const startFaceDetection = async () => {
     try {
       const { FaceMesh } = await import("@mediapipe/face_mesh");
-
       const faceMesh = new FaceMesh({
-        locateFile: (file: string) =>
-          `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+        locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
       });
-
       faceMesh.setOptions({
-        maxNumFaces: 1,
+        maxNumFaces: 3,
         refineLandmarks: true,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5,
@@ -338,169 +441,106 @@ const InterviewRoom = () => {
 
       faceMesh.onResults((results: any) => {
         if (sessionEndedRef.current) return;
-
         hasFirstFrameProcessedRef.current = true;
-
-        const facePresent =
-          results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0;
-
+        const faces: any[] = results.multiFaceLandmarks ?? [];
+        const facePresent = faces.length > 0;
         setFaceDetected(facePresent);
+        setCondition("no_face", !facePresent);
+        setCondition("multiple_faces", faces.length > 1);
+        if (!facePresent) { setCondition("gaze_away", false); return; }
 
-        if (facePresent) {
-          lastFaceDetectedTimeRef.current = Date.now();
-          
-          // Face present — check if actually looking at screen via nose/eye alignment
-          const landmarks = results.multiFaceLandmarks[0];
-          if (landmarks) {
-            const noseTip = landmarks[1];
-            const leftEye = landmarks[33];
-            const rightEye = landmarks[263];
-            const eyeMidX = (leftEye.x + rightEye.x) / 2;
-            const isLookingAtScreen = Math.abs(noseTip.x - eyeMidX) < 0.15;
+        const landmarks = faces[0];
+        const noseTip = landmarks[1];
+        const leftEye = landmarks[33];
+        const rightEye = landmarks[263];
+        const eyeMidX = (leftEye.x + rightEye.x) / 2;
+        const isLookingAtScreen = Math.abs(noseTip.x - eyeMidX) < 0.15;
+        setCondition("gaze_away", !isLookingAtScreen);
 
-            // Posture calculation
-            const topY = landmarks[10].y;
-            const bottomY = landmarks[152].y;
-            const faceHeight = bottomY - topY;
-            const dy = rightEye.y - leftEye.y;
-            const dx = rightEye.x - leftEye.x;
-            const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-            
-            let posture = 100;
-            if (faceHeight < 0.15 || faceHeight > 0.85) posture -= 30; // too close or too far
-            if (Math.abs(angle) > 15) posture -= 20; // head tilted significantly
-
-            // Send vision scores to backend every 3 seconds
-            const now = Date.now();
-            if (now - lastVisionSendRef.current > 3000) {
-              lastVisionSendRef.current = now;
-              if (wsRef.current?.readyState === WebSocket.OPEN) {
-                wsRef.current.send(JSON.stringify({
-                  type: "vision_scores",
-                  scores: {
-                    posture_score: Math.max(0, posture),
-                    eye_contact_score: isLookingAtScreen ? 100 : 0
-                  }
-                }));
-              }
-            }
-
-            if (!isLookingAtScreen) {
-              if (!lookAwayTimerRef.current) {
-                lookAwayTimerRef.current = setTimeout(() => {
-                  lookAwayTimerRef.current = null;
-                  if (!sessionEndedRef.current && !showWarning) {
-                    triggerWarning("You appeared to look away from the screen.");
-                  }
-                }, LOOK_AWAY_THRESHOLD_MS);
-              }
-            } else {
-              // Looking at screen — cancel any pending timer
-              if (lookAwayTimerRef.current) {
-                clearTimeout(lookAwayTimerRef.current);
-                lookAwayTimerRef.current = null;
-              }
-            }
-          }
-        }
+        const faceHeight = landmarks[152].y - landmarks[10].y;
+        const angle = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x) * (180 / Math.PI);
+        let posture = 100;
+        if (faceHeight < 0.15 || faceHeight > 0.85) posture -= 30;
+        if (Math.abs(angle) > 15) posture -= 20;
+        proctoring.setVision({ posture_score: Math.max(0, posture), eye_contact_score: isLookingAtScreen ? 100 : 0 });
       });
 
-      // Use requestAnimationFrame for robust error handling instead of setInterval
       const processVideo = async () => {
         if (sessionEndedRef.current) return;
-        
         if (videoRef.current && videoRef.current.readyState >= 2) {
-          try {
-            await faceMesh.send({ image: videoRef.current });
-          } catch (e) {
-            // Silently ignore errors from blank frames (e.g., shuttered webcam)
-            // This prevents MediaPipe from completely breaking on a bad frame
-          }
+          try { await faceMesh.send({ image: videoRef.current }); } catch { /* bad frame */ }
         }
-        
-        // Loop at ~500ms intervals by using setTimeout within the rAF
-        faceCheckRef.current = setTimeout(() => {
-          requestAnimationFrame(processVideo);
-        }, 500);
+        faceCheckRef.current = setTimeout(() => requestAnimationFrame(processVideo), FACE_CHECK_INTERVAL_MS);
       };
-      
-      processVideo();
-
-      // Independent Watchdog Timer: Runs every 1s
-      // If `onResults` hasn't fired or found a face in 5s, terminate immediately.
-      // This protects against MediaPipe crashing on black frames.
-      lastFaceDetectedTimeRef.current = Date.now();
-      watchdogTimerRef.current = setInterval(() => {
-        if (sessionEndedRef.current) return;
-        if (!hasFirstFrameProcessedRef.current) {
-          lastFaceDetectedTimeRef.current = Date.now();
-          return;
-        }
-        const timeSinceLastFace = Date.now() - lastFaceDetectedTimeRef.current;
-        if (timeSinceLastFace > LOOK_AWAY_THRESHOLD_MS) {
-          setFaceDetected(false);
-          handleAutoEnd(true, "You left the screen for more than 5 seconds. The interview has been terminated immediately.");
-        }
-      }, 1000);
-
+      void processVideo();
     } catch (err) {
-      // ── Fallback: original skin pixel heuristic ──────────────────────
       console.warn("MediaPipe unavailable, using fallback detection:", err);
-
       faceCheckRef.current = setInterval(() => {
-        if (sessionEndedRef.current || showWarning) return;
-        if (!videoRef.current || !canvasRef.current) return;
+        if (sessionEndedRef.current) return;
         const video = videoRef.current;
         const canvas = canvasRef.current;
-        const ctx = canvas.getContext("2d");
-        if (!ctx || video.readyState < 2) return;
-        
+        const c = canvas?.getContext("2d");
+        if (!video || !canvas || !c || video.readyState < 2) return;
         hasFirstFrameProcessedRef.current = true;
-        
         canvas.width = 80; canvas.height = 60;
-        ctx.drawImage(video, 0, 0, 80, 60);
-        const imageData = ctx.getImageData(0, 0, 80, 60).data;
-        let skinPixels = 0;
-        const totalPixels = 80 * 60;
-        for (let i = 0; i < imageData.length; i += 4) {
-          const r = imageData[i], g = imageData[i+1], b = imageData[i+2];
-          if (r > 95 && g > 40 && b > 20 && r > g && r > b && Math.abs(r-g) > 15 && r-b > 15) skinPixels++;
+        c.drawImage(video, 0, 0, 80, 60);
+        const data = c.getImageData(0, 0, 80, 60).data;
+        let skin = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i], g = data[i + 1], b = data[i + 2];
+          if (r > 95 && g > 40 && b > 20 && r > g && r > b && Math.abs(r - g) > 15 && r - b > 15) skin++;
         }
-        const facePresent = (skinPixels / totalPixels) > 0.04;
+        const facePresent = skin / (80 * 60) > 0.04;
         setFaceDetected(facePresent);
-        if (facePresent) {
-          lastFaceDetectedTimeRef.current = Date.now();
-        }
+        setCondition("no_face", !facePresent);
       }, 800);
-      
-      // Fallback watchdog
-      lastFaceDetectedTimeRef.current = Date.now();
-      watchdogTimerRef.current = setInterval(() => {
-        if (sessionEndedRef.current) return;
-        if (!hasFirstFrameProcessedRef.current) {
-          lastFaceDetectedTimeRef.current = Date.now();
-          return;
-        }
-        const timeSinceLastFace = Date.now() - lastFaceDetectedTimeRef.current;
-        if (timeSinceLastFace > LOOK_AWAY_THRESHOLD_MS) {
-          setFaceDetected(false);
-          handleAutoEnd(true, "You left the screen for more than 5 seconds. The interview has been terminated immediately.");
-        }
-      }, 1000);
     }
   };
 
-  // ── TAB VISIBILITY DETECTION ─────────────────────────────────────────
+  // ── Browser-level signals ──────────────────────────────────────────────
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden && !sessionEndedRef.current && greeted) {
-        triggerWarning("You switched tabs or minimized the window during the interview.");
+    const onVisibility = () => {
+      if (document.hidden && !sessionEndedRef.current && greetedRef.current) {
+        proctoring.report("tab_switch", 3);
+        showFlag("You switched tabs or minimized the window.");
       }
     };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [greeted, triggerWarning]);
+    const onBlur = () => {
+      if (!document.hidden && !sessionEndedRef.current && greetedRef.current) proctoring.report("window_blur", 2);
+    };
+    const onFullscreen = () => {
+      if (!document.fullscreenElement && !sessionEndedRef.current && greetedRef.current) {
+        proctoring.report("fullscreen_exit", 3);
+        showFlag("You left full screen.", "fullscreen");
+      }
+    };
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener("fullscreenchange", onFullscreen);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("fullscreenchange", onFullscreen);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [proctoring, showFlag]);
 
+  const blockClipboard = (e: React.ClipboardEvent | React.MouseEvent) => e.preventDefault();
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
+    const length = e.clipboardData?.getData("text")?.length ?? 0;
+    proctoring.report("paste_attempt", 3, { length });
+    setStatusMsg("Pasting is disabled during the interview. Type or speak your answer.");
+  };
+
+
+  // ── Voice input ──────────────────────────────────────────────────────
   // ── VOICE INPUT SETUP ─────────────────────────────────────────────────
   useEffect(() => {
     const clearMicIdleTimer = () => {
@@ -569,10 +609,9 @@ const InterviewRoom = () => {
         setIsListening(false);
         const merged = `${transcriptFinalRef.current} ${transcriptInterimRef.current}`.trim();
         if (merged) setTextInput(merged);
-        console.debug(`[MIC_DIAG] recognition ended reason=${micStopReasonRef.current}`);
         if (pendingSubmitRef.current) {
           pendingSubmitRef.current = false;
-          setTimeout(() => handleSubmit(), 60);
+          setTimeout(() => handleSubmitRef.current(), 60);
         }
         setTimeout(() => textareaRef.current?.focus(), 100);
       };
@@ -584,7 +623,7 @@ const InterviewRoom = () => {
         markMicStopReason(`error:${event.error || "unknown"}`);
         if (pendingSubmitRef.current) {
           pendingSubmitRef.current = false;
-          setTimeout(() => handleSubmit(), 60);
+          setTimeout(() => handleSubmitRef.current(), 60);
         }
         if (event.error === "not-allowed") setStatusMsg("Mic denied. Allow mic in browser settings.");
         else if (event.error === "no-speech") setStatusMsg("No speech detected. Tap mic and try again.");
@@ -639,7 +678,7 @@ const InterviewRoom = () => {
             setStatusMsg("Recording captured — press Send or Enter");
             if (pendingSubmitRef.current) {
               pendingSubmitRef.current = false;
-              handleSubmit();
+              handleSubmitRef.current();
             }
           };
           reader.readAsDataURL(audioBlob);
@@ -684,123 +723,99 @@ const InterviewRoom = () => {
     }, 100);
   };
 
-  // ── QUESTION LIMIT CHECK ──────────────────────────────────────────────
-  // Removed local check: we now wait for backend to send 'session_complete'
+  // ── Turns ──────────────────────────────────────────────────────────────
+  const applyTurnResponse = (res: SubmitTurnResponse) => {
+    pendingTurnRef.current = null;
+    pendingTurnAudioRef.current = null;
+    isProcessingRef.current = false;
+    setIsProcessing(false);
+    setConnectionProblem("");
+    setQuestionsAsked(res.questions_asked);
+    setPhase(res.phase);
+    if (res.feedback) setFeedback((prev) => [res.feedback!, ...prev].slice(0, 5));
 
-  // ── MAIN INIT ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!sessionId) { navigate("/dashboard"); return; }
-
-    // Check MediaRecorder support for Whisper audio recording
-    if (typeof MediaRecorder !== 'undefined' &&
-        navigator.mediaDevices?.getUserMedia) {
-      setAudioSupported(true);
+    if (res.session_complete || !res.question) {
+      persist({ pendingTurn: null });
+      void finish(
+        "completed",
+        `Thank you ${studentName}! That's the end of the interview. Your report is being prepared. Well done!`,
+        "Interview complete! Generating report...",
+      );
+      return;
     }
 
-    initWebSocket();
-    startTimer();
-    startWebcam();
-    setMessages([{ role: "ai", text: greetingText }]);
-    setTimeout(() => {
-      speak(greetingText, () => {
-        setTimeout(() => {
-          setMessages(prev => [...prev, { role: "ai", text: openingQ }]);
-          speak(openingQ, () => {
-            setStatusMsg("Type or speak your answer, then press Enter");
-            setTimeout(() => textareaRef.current?.focus(), 200);
-          });
-          setGreeted(true);
-        }, 600);
-      });
-    }, 800);
-    return () => {
-      window.speechSynthesis?.cancel();
-      recognitionRef.current?.stop();
-      if (mediaRecorderRef.current?.state === 'recording') {
-        mediaRecorderRef.current.stop();
-      }
-      wsRef.current?.close();
-      stopWebcam();
-      clearInterval(timerRef.current);
-      clearInterval(countdownRef.current);
-      clearTimeout(lookAwayTimerRef.current);
-    };
-  }, []);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
-
-  const startTimer = () => {
-    startRef.current = Date.now();
-    timerRef.current = setInterval(() => {
-      const s = Math.floor((Date.now() - startRef.current) / 1000);
-      setElapsed(`${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`);
-    }, 1000);
+    lastQuestionRef.current = res.question;
+    setMessages((prev) => [...prev, { role: "ai", text: res.question! }]);
+    persist({ pendingTurn: null, lastQuestion: res.question });
+    setStatusMsg("AI is speaking...");
+    speak(res.question, () => {
+      setStatusMsg("Type or speak your answer, then press Enter");
+      setTimeout(() => textareaRef.current?.focus(), 200);
+    });
   };
 
-  const initWebSocket = () => {
-    const wsBase = import.meta.env.VITE_WS_URL || "ws://localhost:8000";
-    const ws = new WebSocket(`${wsBase}/ws/interview/${sessionId}`);
-    ws.onopen = () => { setIsConnected(true); setStatusMsg("Connected! Listen to the greeting then answer."); };
-    ws.onmessage = (e) => {
+  const sendTurn = async (turn: PendingTurn, audio: string | null) => {
+    isProcessingRef.current = true;
+    setIsProcessing(true);
+    setConnectionProblem("");
+    setStatusMsg("AI is thinking...");
+    pendingTurnRef.current = turn;
+    pendingTurnAudioRef.current = audio;
+    persist({ pendingTurn: turn });
+
+    const attempt = () =>
+      submitTurn(sessionId, {
+        turn_id: turn.turnId,
+        transcript: turn.transcript,
+        audio,
+        answered_question: turn.answeredQuestion,
+      });
+
+    try {
+      let res: SubmitTurnResponse;
       try {
-        const data = JSON.parse(e.data);
-        if (data.type === "next_question") {
-          isProcessingRef.current = false; setIsProcessing(false); setTextInput("");
-          setQuestionsAsked(data.questions_asked || 0);
-          setPhase(data.phase || "technical");
-          setMessages(prev => [...prev, { role: "ai", text: data.question }]);
-          setStatusMsg("AI is speaking...");
-          speak(data.question, () => {
-            setStatusMsg("Type or speak your answer, then press Enter");
-            setTimeout(() => textareaRef.current?.focus(), 200);
-          });
-          if (data.feedback) setFeedback(prev => [data.feedback, ...prev].slice(0, 5));
+        res = await withRetry(attempt, {
+          attempts: 4,
+          onRetry: (n) => setStatusMsg(`Connection is slow — retrying (${n})...`),
+        });
+      } catch (err) {
+        // Two copies of the same turn raced; the server has it. Replaying returns the stored response.
+        if (err instanceof ApiError && err.status === 409 && /already submitted/i.test(err.message)) {
+          await new Promise((r) => setTimeout(r, 1500));
+          res = await attempt();
+        } else {
+          throw err;
         }
-        if (data.type === "transcript_update") {
-          setMessages(prev => {
-            const newMessages = [...prev];
-            for (let i = newMessages.length - 1; i >= 0; i--) {
-              if (newMessages[i].role === "user") {
-                newMessages[i].text = data.text;
-                break;
-              }
-            }
-            return newMessages;
-          });
-        }
-        if (data.type === "posture_warning") { setPostureTip(data.message); setTimeout(() => setPostureTip(""), 6000); }
-        if (data.type === "session_complete") { 
-          if (!sessionEndedRef.current) {
-            if (data.message && window.speechSynthesis) {
-              setStatusMsg(data.message);
-              const u = new SpeechSynthesisUtterance(data.message);
-              u.onend = () => handleAutoEnd();
-              window.speechSynthesis.speak(u);
-            } else {
-              handleAutoEnd(); 
-            }
-          } 
-        }
-        if (data.type === "error") setStatusMsg("❌ " + data.message);
-      } catch (err) { console.error("WS parse:", err); }
-    };
-    ws.onclose = (e) => { setIsConnected(false); if (e.code !== 1000) setStatusMsg("Connection lost. Refresh."); };
-    ws.onerror = () => setStatusMsg("❌ Backend not reachable on port 8000.");
-    wsRef.current = ws;
+      }
+      applyTurnResponse(res);
+    } catch (err) {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+      const e = err as ApiError;
+      if (e instanceof ApiError && (e.status === 404 || (e.status === 409 && /already ended/i.test(e.message)))) {
+        pendingTurnRef.current = null;
+        void finish("server_stopped", "", "This interview has already ended. Opening your report...");
+        return;
+      }
+      // Answer is kept (pendingTurn) and can be resent with the same turn_id.
+      setConnectionProblem(e.message || "Could not send your answer.");
+      setStatusMsg("Your answer is saved. Tap Retry to send it.");
+    }
+  };
+
+  const retryPendingTurn = () => {
+    const turn = pendingTurnRef.current;
+    if (turn && !isProcessingRef.current) void sendTurn(turn, pendingTurnAudioRef.current);
   };
 
   const handleSubmit = () => {
-    if (sessionEnded || showWarning) return;
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) { setStatusMsg("Not connected. Refresh."); return; }
+    if (sessionEndedRef.current || showWarningRef.current || isProcessingRef.current) return;
+    if (pendingTurnRef.current) { retryPendingTurn(); return; }
 
-    // If MediaRecorder is active — stop it first; onstop will store audio, then user must press Send again
-    // If MediaRecorder is active — stop it, and submit automatically in onstop
-    if (mediaRecorderRef.current?.state === 'recording') {
+    // Stop recording first; its onstop handler stores the audio and calls submit again.
+    if (mediaRecorderRef.current?.state === "recording") {
       pendingSubmitRef.current = true;
       mediaRecorderRef.current.stop();
-      
       if (isListeningRef.current) {
         isListeningRef.current = false;
         setIsListening(false);
@@ -808,7 +823,6 @@ const InterviewRoom = () => {
       }
       return;
     }
-
     if (isListeningRef.current) {
       pendingSubmitRef.current = true;
       markMicStopReason("submit-stop");
@@ -816,62 +830,99 @@ const InterviewRoom = () => {
       return;
     }
 
-    const answer = `${textInput} ${transcriptFinalRef.current} ${transcriptInterimRef.current}`.trim();
+    const answer = (textInputRef.current || `${transcriptFinalRef.current} ${transcriptInterimRef.current}`).trim();
     if (!answer && !pendingAudioRef.current) { textareaRef.current?.focus(); return; }
-    setMessages(prev => [...prev, { role: "user", text: answer || "[Audio Recorded]" }]);
+    setMessages((prev) => [...prev, { role: "user", text: answer || "[Audio answer]" }]);
     setTextInput("");
     transcriptFinalRef.current = "";
     transcriptInterimRef.current = "";
-    isProcessingRef.current = true; setIsProcessing(true); setStatusMsg("AI is thinking...");
     window.speechSynthesis?.cancel();
-    const pendingAudio = pendingAudioRef.current;
+    const audio = pendingAudioRef.current;
     pendingAudioRef.current = null;
 
-    wsRef.current.send(JSON.stringify({
-      type: "turn_complete",
-      transcript: answer,
-      audio: pendingAudio || null,
-      debug_mic: {
-        stop_reason: micStopReasonRef.current,
-        transcript_chars: answer.length,
-        sent_at: new Date().toISOString()
-      }
-    }));
+    void sendTurn({ turnId: newId(), transcript: answer, answeredQuestion: lastQuestionRef.current }, audio);
   };
+  handleSubmitRef.current = handleSubmit;
+
+
+  // ── Main init ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!sessionId) { navigate("/dashboard", { replace: true }); return; }
+
+    if (typeof MediaRecorder !== "undefined" && navigator.mediaDevices?.getUserMedia) setAudioSupported(true);
+
+    const startedAt = ctx?.startedAt ?? Date.now();
+    timerRef.current = setInterval(() => setElapsed(formatElapsed(Date.now() - startedAt)), 1000);
+    void startWebcam();
+
+    if (restored?.greeted) {
+      // Resumed after a refresh: no greeting, pick up where we were.
+      setStatusMsg("Welcome back — your interview has been restored.");
+      if (pendingTurnRef.current) {
+        setTimeout(() => retryPendingTurn(), 400);
+      } else {
+        setTimeout(() => textareaRef.current?.focus(), 300);
+      }
+    } else {
+      setMessages([{ role: "ai", text: greetingText }]);
+      setTimeout(() => {
+        speak(greetingText, () => {
+          setTimeout(() => {
+            setMessages((prev) => [...prev, { role: "ai", text: openingQ }]);
+            lastQuestionRef.current = openingQ;
+            greetedRef.current = true;
+            setGreeted(true);
+            speak(openingQ, () => {
+              setStatusMsg("Type or speak your answer, then press Enter");
+              setTimeout(() => textareaRef.current?.focus(), 200);
+            });
+          }, 600);
+        });
+      }, 800);
+    }
+
+    return () => {
+      window.speechSynthesis?.cancel();
+      recognitionRef.current?.stop();
+      if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
+      stopWebcam();
+      clearInterval(timerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [messages]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
   };
 
-  const handleEndInterview = async () => {
-    if (confirm("End interview early? Report will be generated with answers so far.")) {
-      sessionEndedRef.current = true; setSessionEnded(true);
-      markMicStopReason("manual-end-interview");
-      recognitionRef.current?.stop(); window.speechSynthesis?.cancel();
-      // Stop any active MediaRecorder and release the mic stream
-      if (mediaRecorderRef.current?.state === 'recording') {
-        mediaRecorderRef.current.stop();
-        setIsRecording(false);
-      }
-      pendingAudioRef.current = null;
-      wsRef.current?.close(); stopWebcam();
-      clearInterval(countdownRef.current);
-      try { await endInterview(sessionId); } catch (e) { }
-      navigate(`/report?session=${sessionId}`);
-    }
+  const handleEndInterview = () => {
+    if (!confirm("End interview early? Your report will be generated from the answers so far.")) return;
+    pendingAudioRef.current = null;
+    void finish("student_ended", "", "Ending interview...");
   };
 
+  const isConnected = online && !connectionProblem;
   const phaseColor = phase === "warmup" ? "text-warning" : phase === "technical" ? "text-primary" : "text-success";
-  const canUseMic = !isProcessing && !isSpeaking && isConnected && greeted && !sessionEnded && !showWarning && (voiceSupported || audioSupported);
-  const canSubmit = !isProcessing && !isSpeaking && isConnected && (textInput.trim().length > 0 || pendingAudioRef.current) && greeted && !sessionEnded && !showWarning;
+  const canUseMic = !isProcessing && !isSpeaking && greeted && !sessionEnded && !showWarning && (voiceSupported || audioSupported);
+  const canSubmit = !isProcessing && !isSpeaking && (textInput.trim().length > 0 || Boolean(pendingAudioRef.current)) && greeted && !sessionEnded && !showWarning;
+
+  if (!sessionId) return null;
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col select-none" onCopy={blockClipboard} onCut={blockClipboard} onContextMenu={blockClipboard}>
       <Navbar />
       <AnimatePresence>
         {showWarning && (
-          <WarningOverlay warningCount={warningCount} isFinalWarning={isFinalWarning}
-            countdown={countdown} reason={warningReason} onDismiss={dismissWarning} />
+          <WarningOverlay
+            flagCount={flagCount}
+            reason={warningReason}
+            actionLabel={warningAction === "fullscreen" ? "Return to full screen" : "I understand — continue interview"}
+            onDismiss={dismissWarning}
+          />
         )}
       </AnimatePresence>
 
@@ -885,23 +936,20 @@ const InterviewRoom = () => {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {warningCount > 0 && (
-            <div className="flex items-center gap-1">
-              {[1,2,3].map(i => (
-                <div key={i} className={`w-2.5 h-2.5 rounded-full ${i <= warningCount ? "bg-yellow-500" : "bg-muted"}`} />
-              ))}
-              <span className="text-xs text-yellow-500 ml-1 font-medium">{warningCount}/{MAX_WARNINGS}</span>
-            </div>
+          {flagCount > 0 && (
+            <span className="flex items-center gap-1 text-xs text-yellow-600 font-medium">
+              <AlertTriangle className="w-3.5 h-3.5" /> {flagCount} flag{flagCount > 1 ? "s" : ""}
+            </span>
           )}
           {webcamActive && (
-            <div className={`flex items-center gap-1 text-xs ${faceDetected ? "text-green-400" : "text-red-400"}`}>
+            <div className={`flex items-center gap-1 text-xs ${faceDetected ? "text-green-500" : "text-red-500"}`}>
               {faceDetected ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
               <span className="hidden sm:inline">{faceDetected ? "Focused" : "Look here"}</span>
             </div>
           )}
-          <span className="text-xs text-muted-foreground font-mono">Q {questionsAsked}/{MAX_QUESTIONS}</span>
-          <Progress value={(questionsAsked / MAX_QUESTIONS) * 100} className="w-24 h-2" />
-          <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"} animate-pulse`} />
+          <span className="text-xs text-muted-foreground font-mono">Q {Math.min(questionsAsked, maxQuestions)}/{maxQuestions}</span>
+          <Progress value={(Math.min(questionsAsked, maxQuestions) / maxQuestions) * 100} className="w-24 h-2" />
+          <div title={isConnected ? "Connected" : "Connection problem"} className={`w-2.5 h-2.5 rounded-full ${isConnected ? "bg-green-500" : "bg-red-500"} animate-pulse`} />
           {!sessionEnded && (
             <Button variant="destructive" size="sm" onClick={handleEndInterview}>
               <Phone className="w-3 h-3 mr-1" /> End
@@ -912,20 +960,22 @@ const InterviewRoom = () => {
 
       {/* Status bar */}
       <div className={`px-6 py-2 text-xs text-center font-medium border-b border-border transition-all
-        ${isRecording ? "bg-red-600/15 text-red-400"
-          : isListening ? "bg-red-500/10 text-red-400" : isProcessing ? "bg-primary/10 text-primary"
-          : isSpeaking ? "bg-purple-500/10 text-purple-400" : "bg-green-500/10 text-green-400"}`}>
-        {isRecording ? "" : isListening ? "" : isProcessing ? "" : isSpeaking ? "" : ""}{statusMsg}
+        ${connectionProblem || !online ? "bg-red-500/10 text-red-500"
+          : isRecording || isListening ? "bg-red-500/10 text-red-500"
+          : isProcessing ? "bg-primary/10 text-primary"
+          : isSpeaking ? "bg-purple-500/10 text-purple-500" : "bg-green-500/10 text-green-600"}`}>
+        {!online ? "You are offline. Your answer will be sent when you reconnect." : statusMsg}
       </div>
 
-      <AnimatePresence>
-        {postureTip && (
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="mx-auto mt-2 px-5 py-2.5 rounded-xl bg-amber-500/20 border border-amber-600/40 text-amber-600 font-medium text-sm z-40">
-            {postureTip}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {connectionProblem && !sessionEnded && (
+        <div className="mx-auto mt-2 flex items-center gap-3 px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-sm text-red-600">
+          <WifiOff className="w-4 h-4" />
+          <span>{connectionProblem}</span>
+          <Button size="sm" variant="outline" onClick={retryPendingTurn} disabled={isProcessing}>
+            <RefreshCw className="w-3.5 h-3.5 mr-1" /> Retry
+          </Button>
+        </div>
+      )}
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_280px] overflow-hidden">
         <div className="flex flex-col overflow-hidden border-r border-border">
@@ -988,7 +1038,7 @@ const InterviewRoom = () => {
               <div className="flex gap-2 items-end">
                 <div className="flex-1">
                   <textarea ref={textareaRef} value={textInput}
-                    onChange={e => setTextInput(e.target.value)} onKeyDown={handleKeyDown}
+                    onChange={e => setTextInput(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste}
                     disabled={isProcessing || !greeted || sessionEnded || showWarning}
                     placeholder={
                       showWarning ? "Dismiss the warning to continue..."
@@ -1044,9 +1094,7 @@ const InterviewRoom = () => {
                 Note: If a word is transcribed incorrectly, relax! The AI evaluates your answers contextually.
               </p>
             )}
-            {!isConnected && !sessionEnded && (
-              <p className="text-center text-xs text-red-400 mt-2">  Not connected — make sure backend is running on port 8000.</p>
-            )}
+
           </div>
         </div>
 
@@ -1084,19 +1132,13 @@ const InterviewRoom = () => {
                 {faceDetected ? "✅ Face Tracking Active & Visible" : "❌ Face Not Detected - Please return to camera!"}
               </p>
             </div>
-            {warningCount > 0 && (
-              <div className={`p-3 rounded-xl border text-xs ${warningCount >= MAX_WARNINGS
-                ? "bg-red-500/10 border-red-500/20 text-red-500"
-                : "bg-amber-500/15 border-amber-600/30 text-amber-600 font-medium"}`}>
+            {flagCount > 0 && (
+              <div className="p-3 rounded-xl border text-xs bg-amber-500/15 border-amber-600/30 text-amber-700 font-medium">
                 <div className="flex items-center gap-2 mb-1">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  <span className="font-bold">Attention Warnings: {warningCount}/{MAX_WARNINGS}</span>
+                  <span className="font-bold">Attention flags: {flagCount}</span>
                 </div>
-                <p className="text-muted-foreground text-xs">
-                  {MAX_WARNINGS - warningCount > 0
-                    ? `${MAX_WARNINGS - warningCount} warning(s) before interview ends`
-                    : "Final warning issued"}
-                </p>
+                <p className="text-muted-foreground text-xs">Flags lower your integrity score on the report.</p>
               </div>
             )}
             {feedback.length === 0
@@ -1126,4 +1168,3 @@ const InterviewRoom = () => {
 };
 
 export default InterviewRoom;
-

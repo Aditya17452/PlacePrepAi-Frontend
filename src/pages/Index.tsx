@@ -1,4 +1,5 @@
 ﻿import { useNavigate } from "react-router-dom";
+import { getUser, homeFor, isLoggedIn } from "@/lib/session";
 import { useEffect, useState, useRef } from "react";
 import { motion, useInView } from "framer-motion";
 import Navbar from "@/components/layout/Navbar";
@@ -61,7 +62,8 @@ const Index = () => {
   const [roleIdx, setRoleIdx] = useState(0);
 
   useEffect(() => {
-    if (sessionStorage.getItem("token")) navigate("/dashboard");
+    const user = getUser();
+    if (isLoggedIn() && user) navigate(homeFor(user.role));
   }, []);
 
   useEffect(() => {

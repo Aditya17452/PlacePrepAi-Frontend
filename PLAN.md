@@ -422,6 +422,75 @@ ends with: what changed / how to test it / open risks.
 - Sentry on both sides (DSN via env, PII scrubbed); security headers in `vercel.json`.
 - Real tests: API client, env resolution, the reducer logic pulled out of `InterviewRoom`.
 
+> **Status (2026-11-27, branch `feat/phase1c-frontend`): done, pending end-to-end test on a Vercel preview.**
+> - [x] `src/lib/env.ts` (fails fast in production); WebSocket env vars removed — the interview is HTTP turns now.
+> - [x] Typed client generated from the backend OpenAPI schema (`npm run gen:api`), `ApiError` with status, 401 → re-login.
+> - [x] `ErrorBoundary`, `QueryClientProvider`, toasters mounted; route-level code splitting.
+> - [x] `RequireAuth` with roles `student` / `college_admin` / `admin`; old `/officer`, `/super-admin`, `/buy-credits` redirect.
+> - [x] OAuth one-time-code exchange; email/phone OTP page; college-admin invite page; MFA code on login.
+> - [x] Interview room on `POST /interviews/{id}/turns`: client `turn_id`, retry with backoff, resume after refresh, retry button.
+> - [x] Proctoring batched to `POST /interviews/{id}/proctoring` every 5 s; server decides termination; no client auto-end.
+> - [x] Tokens: wallet, plans, Razorpay checkout, status polling (webhook grants tokens); no client-side deduction.
+> - [x] College-admin console (students + reports, roster CSV, join requests, allowance groups/overrides) and admin console (colleges, grant/revoke, freeze, verify domain, audit + ledger).
+> - [x] Sentry (lazy, no PII), security headers in `vercel.json`, CI (lint, typecheck, tests, build, secret grep).
+> - [x] Tests: API client, retry, session, CSV parser, proctoring batching.
+> - [x] Shortlist UI — `/college → Shortlist`, role picker plus ranked table with integrity
+>       in its own column.
+> - [x] Server-side record of the proctoring consent — `POST /api/consents` stores kind,
+>       version, IP and user agent; `/interviews/start` refuses a proctored session without
+>       a current one.
+>       Fixing this exposed an ordering bug: the notice was on `/pre-interview` but
+>       `/interviews/start` ran one screen earlier on the dashboard, so the first interview
+>       would have 403'd before the student ever saw the consent text. The session is now
+>       created on `/pre-interview`, after they agree — which also stops a token being
+>       reserved for someone who backs out of the checklist.
+>
+> **Phase 1 gaps closed (2026-11-27, branch `feat/phase1-backend-gaps`):**
+> - [x] Consent endpoints, versioned, with the start gate. 20 tests.
+> - [x] OTP delivery: Resend for email; MSG91 for SMS behind `SMS_ENABLED=false` until the
+>       DLT template is approved. Both still return 503 when a channel is unavailable, and
+>       the message says whether it is switched off or misconfigured.
+> - [x] TOTP enrolment for admins (`/api/auth/mfa/setup` + `/confirm`), with the enrolment
+>       section on `/admin → Security`. Confirming signs the account out everywhere.
+> - [x] Confirmed **with tests**, not assertions: CORS reflects only configured origins and
+>       never `*`; rate limits on login / OTP / interview start / payments return 429 with
+>       `Retry-After`; `/ready` reports the in-memory Redis fallback honestly; resume upload
+>       refuses >5 MB (413) and non-document bytes (400) regardless of declared content type.
+> - [x] RLS deny-by-default migration `0004` — 32 tables, no policies, `anon` /
+>       `authenticated` grants revoked. Not yet applied to Supabase.
+> - [x] Backup procedure written into `RUNBOOK.md` (dashboard check + session-pooler
+>       `pg_dump` + a verification step, because a truncated dump looks like a backup).
+> - [x] Migrations applied to Supabase (2026-11-27, after backup confirmed). `alembic_version`
+>       = `0006_fk_covering_indexes`. Applied through the Supabase MCP so no database
+>       password had to move through a chat; `alembic_version` set to match so the CLI stays
+>       correct. Verified: 8 student wallets / 472 tokens, college pool 457, 7 accounts
+>       linked to the college, 6 in the default allowance group, 6 `jd_chunks`, 7 plans.
+> - [x] Two gaps found *by verifying* rather than by tests: `students.college_id` was never
+>       backfilled (college console would have shown zero students, and nobody could draw
+>       from the pool) → `0005`; two unindexed foreign keys → `0006`.
+> - [x] Advisors re-run. The 9 ERROR-level `rls_disabled_in_public` findings are gone;
+>       `unindexed_foreign_keys` cleared. What remains is INFO-only and deliberately left:
+>       `rls_enabled_no_policy` *is* deny-by-default (adding policies would grant the anon
+>       key access), and `unused_index` only means no traffic has hit minutes-old indexes.
+> - [ ] End-to-end run on Vercel previews.
+>
+> **Contract audit against backend `chore/project-structure` (2026-11-27): no mismatches.**
+> Checked mechanically, not by eye — the committed `src/lib/api/openapi.json` was diffed
+> against the live spec from `create_app().openapi()`:
+> - 53 paths on each side, identical sets; no method differences on any shared path.
+> - `components.schemas` identical: no field-name, extra-field or `required` differences.
+> - Declared response status codes identical on every operation.
+> - Every hand-written path in `src/services/api.ts` resolves to a real route.
+> - The three query-parameter endpoints (`/officer/shortlist?jd_id`,
+>   `/super/colleges/{id}/freeze?frozen`, `/officer/enrollment-requests/{id}?approve`)
+>   are called with `query:`, not a JSON body — which is what the old `generateShortlist`
+>   got wrong and 422'd on.
+> - `withRetry` treats 503 as retryable, and is applied only to turn submission, where
+>   503 means `LLMBusy` backpressure. The other 503 paths (OTP with no provider,
+>   Razorpay unset) are permanent and are not retried.
+>
+> Nothing to fix here. The two unchecked boxes above are backend gaps, not mismatches.
+
 **1d. Load test**
 - k6: 100 concurrent WS interview sessions, ~12 turns each, Groq stubbed and live.
 - Expected bottleneck: Groq tokens/min and requests/min on the shared key. Mitigation —
@@ -745,3 +814,153 @@ Groq. Self-serve production defaults:
   only while our key still has access.
 - `llm_usage` table logs tokens in/out and STT seconds per interview, so cost per interview
   is measured, not estimated. This feeds the §9 guardrail.
+
+---
+
+## Step 4 status — Vercel previews (2026-11-27)
+
+### Projects
+
+| | |
+|---|---|
+| Backend | `placeprepai-backend` (`prj_IaXhMX56t7r72Hh8TznCZtI4WIvl`), linked to `Aditya17452/PlacePrepAi-Backend` |
+| Frontend | `place-prep-ai-frontend` (`prj_mAkPyx7nOCA1IWelhcby8sWgt8fE`) — already existed, holds `placeprepai.fun` and `www.placeprepai.fun` |
+| Preview alias | `placeprepai-backend-git-feat-phase-2a2332-aditya17452s-projects.vercel.app` |
+
+### Build: four failures, each a real misconfiguration
+
+1. `No interpreter found for Python 3.11.9` — exact patch pin; Vercel's uv has no such interpreter.
+2. `No interpreter found for Python 3.11` — **Vercel's Python runtime does not offer 3.11 at all.** 3.12 is the supported version. Pinning 3.11 was never going to work.
+3. `uv sync --locked` ran regardless of whether `[project].dependencies` was declared, and failed without a committed lockfile. `uv.lock` is now committed and `uv lock --check` passes.
+4. `vercel.json: crons[0] should NOT have additional property "comment"` — the file is strict JSON with a closed schema, so the cron rationale moved to `RUNBOOK.md`.
+
+Build is **READY** as of `502f506`.
+
+### Runtime: blocked on three secrets, by design
+
+`GET /health` returns 500, and the log says exactly why:
+
+```
+Invalid configuration for ENV=preview:
+  - JWT_SECRET is unset or a known placeholder value
+```
+
+That is the startup guard working as intended — a half-configured deploy fails loudly
+instead of serving requests with an insecure default.
+
+Set in the Vercel dashboard (backend project → Settings → Environment Variables):
+
+| Variable | Target | Why not set here |
+|---|---|---|
+| `JWT_SECRET` | preview, production | Reading it out of the local `.env` was blocked, and inventing one would not be cryptographically random. Generate with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Local and preview may legitimately differ. |
+| `CRON_SECRET` | preview, production | Same. Vercel sends it as `Authorization: Bearer` to the cron endpoints; without it they return 503 and refuse to run. |
+| `RAZORPAY_WEBHOOK_SECRET` | preview | Comes from the Razorpay dashboard when the webhook is created, so it does not exist until Step 4's webhook step. |
+
+### Everything else already configured
+
+22 variables set via the API, secrets marked `sensitive` so their values are not
+readable back: `ENV` (preview/production split), `DATABASE_URL`, `DB_POOL_SIZE`,
+`DB_MAX_OVERFLOW`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`,
+`ADMIN_BOOTSTRAP_EMAILS`, `GROQ_API_KEY`, `LLM_MAX_CONCURRENCY`, `RATE_LIMIT_LLM`,
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, `GITHUB_TOKEN`, `RESEND_API_KEY`, `EMAIL_FROM`,
+`SMS_ENABLED`, `CRON_DRAIN_BATCH`, `OPPORTUNISTIC_DRAIN`, `CORS_ORIGINS`,
+`CORS_ORIGIN_REGEX`, `FRONTEND_URL`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`.
+
+Frontend: `VITE_API_BASE_URL` added for the **preview** target only, pointing at the
+backend preview plus `/api`. The existing production value was left untouched.
+
+`ENV=preview` rather than `production` is deliberate: `ENV=production` refuses an
+`rzp_test_` Razorpay key, so a preview on test-mode payments has to be `preview`.
+
+### Still to do in Step 4
+
+- Add the backend preview callback to the Google console's Authorized redirect URIs:
+  `https://placeprepai-backend-aditya17452s-projects.vercel.app/api/auth/google/callback`
+- Create the Razorpay test-mode webhook pointing at
+  `<backend preview>/api/payments/webhook` for `payment.captured`, `payment.failed`,
+  `order.paid`, `refund.processed`, then set `RAZORPAY_WEBHOOK_SECRET`.
+- **Vercel SSO protection is on** for the frontend project (`all_except_custom_domains`),
+  so preview URLs demand Vercel login. Step 5's automated run needs either a protection
+  bypass token or testing through the custom domain.
+- Resend domain `placeprepai.fun` is `not_started`: until the DKIM records are added,
+  email only sends from `onboarding@resend.dev` and only reaches the Resend account
+  owner. OTP will work for your own testing, not for other students.
+
+---
+
+## Step 5 — end-to-end test on the previews (2026-11-28)
+
+Backend `dpl_2EgeSDVdP9Vbuk1rjUSFRQBrrtYP` (`c7f8f1c`), frontend
+`dpl_CqSCVLygia4g3K2FF3nh6XpLBbe3` (`7c5b00b`), both `environment=preview`, Vercel
+Authentication off on both projects.
+
+Run against the live previews: real Supabase, real Upstash, real Groq, Razorpay test
+mode. 30 of 33 assertions passed; the three that did not are listed under *Blocked*.
+
+### PR #2's checklist, step by step
+
+| # | Step | Result | Evidence |
+|---|---|---|---|
+| 1 | `VITE_API_BASE_URL` set, preview origin in CORS | **pass** | Built bundle `index-PVLRHOMV.js` references only `…git-feat-phase-2a2332…/api`; zero references to the old project alias. `OPTIONS /api/auth/login` returns `access-control-allow-origin: <frontend preview alias>` |
+| 2 | Register, then confirm the email code | **register pass / OTP blocked** | `POST /api/auth/register` → `201 role=student needs_verification=True`. `POST /api/auth/otp/send` → **503**, log: `otp_delivery_unavailable … Provider rejected the request (403)` |
+| 3 | Verify the phone number, then see free tokens | **blocked by design** | `503 "We cannot send phone codes right now."` — `SMS_ENABLED=false` while the DLT template is pending. The free plan is `requires_phone_verification: true`, so free tokens are unreachable until SMS is on |
+| 4 | Upload a resume, add a JD, start the interview, one token reserved | **pass** | Resume parsed (`pdf_extracted … chars=238`); `POST /api/jd/submit` → 201; `POST /api/interviews/start` → 201, `funded_by: college`; college pool spendable 456 → 455 |
+| 5a | Answer 3 questions, token consumed | **pass** | Three `POST …/turns` → 200, each returning a different adaptive question; `token_consumed` in the log; `total_available` 3 → 2 |
+| 5b | Refresh mid-interview, the interview resumes | **pass** | Replaying the same `turn_id` on a new connection returns the identical question and charges nothing (`total_available` 2 → 2); a fresh `turn_id` then continues the session at `phase: technical` |
+| 5c | Switch tabs / exit full screen, the flags show | **pass** | `POST …/proctoring` → `{accepted: 2, warnings_issued: 0, terminate: false}`; report shows `integrityScore 88.4` and `integrityTimeline ['tab_switch', 'fullscreen_exit']` |
+| 6 | End the interview; report shows score and a separate integrity section | **pass** | `POST …/end` → 200; report `status=complete overallScore=80.0 verdict=Good`, integrity reported separately from the score |
+| 7 | Buy on `/plans`; tokens only after the webhook | **order pass / payment needs you** | `GET /api/payments/plans` → 4 plans; `POST /api/payments/create-order` → `order_U5UjFMolgdWFUI`, 14900 paise, `rzp_test_…`. `personal_balance` stayed 0, so nothing is granted before the webhook. Entering card details is yours to do — I do not enter payment details |
+| 8 | Admin: enroll a college, accept the invite, upload a roster, check the quota | **blocked** | Needs an admin JWT. `POST /api/admin/tokens/grant` requires `college_id` and an admin principal; no seeded admin exists and I will not create one without your say-so |
+
+Also verified in a real browser: the landing page renders; `/dashboard` redirects to
+`/login?next=%2Fdashboard`; a wrong password shows "Invalid email or password."; a
+non-deliverable address shows the field-level message
+`email: value is not a valid email address …`, so FastAPI validation arrays reach the UI
+readably. I did not type any password into the hosted preview, so authenticated UI
+screens were exercised through the API rather than the browser.
+
+### Two real bugs found and fixed
+
+**1. Every payment returned 502** (`f3dd356`). `razorpay` 1.4.2's `client.py` does
+`import pkg_resources`, which lives in setuptools. pip left setuptools in every
+environment, so this never showed locally; Vercel installs with `uv sync --locked`,
+which does not, so `create-order` and `refund` were dead in any deployment. Webhook
+verification was unaffected (it uses `hmac` directly), so the grant path was fine —
+students simply could never reach it. Fixed by declaring `setuptools==75.6.0`. The test
+suite could not have caught it (CI installs with pip), so CI gained a `deploy-env` job
+that installs exactly as Vercel does and imports the lazily-imported integrations.
+
+**2. The daily interview cap was off by one** (`c7f8f1c`). The start handler adds the
+`InterviewSession` row and flushes it before reserving, so the cap's `COUNT` included the
+session being created: a cap of 3 allowed only 2 interviews a day. `_assert_no_active_interview`
+already excluded the new row by id; the cap check did not. The pre-existing cap test
+passed either way because it never created that row — the regression test now adds and
+flushes it exactly as the router does, and fails with `DailyCapReached` without the fix.
+
+### Blocked, with the reason
+
+1. **Email OTP delivery.** Resend rejects any recipient except the account owner's exact
+   address until a domain is verified (`403`), and the `+alias` form does not count. Fix:
+   add the DKIM records for `placeprepai.fun` in Resend. Until then no student but you can
+   receive a code, so registration cannot complete for anyone else.
+2. **Phone OTP.** `SMS_ENABLED=false` by decision; returns a clear 503. Because the free
+   plan requires a verified phone, the free-tier path is closed until the DLT template is
+   approved. Paid and college-funded interviews are unaffected.
+3. **Admin console flows.** No admin credentials. `ADMIN_BOOTSTRAP_EMAILS` promotes an
+   existing account at app startup, so registering your own address and restarting would
+   create one — that hands an admin login to whoever holds that password, so it needs your
+   decision rather than mine.
+
+### Test fixtures left in the database
+
+The email-OTP block meant the student could not self-enrol, so the fixture was applied
+directly: a roster row for `aaduchouksey1234+e2estep5@gmail.com` (now `is_active=false`),
+and on that student `email_verified_at`, `college_id` and `enrolled_via='roster'` set by
+hand — the same three fields `enrollment._attach` writes. Everything after that point went
+through the real API.
+
+Left behind: one test student (`68764e9e…`), 3 interview sessions, 6 ledger entries and one
+Razorpay test order. The college pool went 457 → 455 (two interviews consumed; the third
+was ended after two answers and correctly released its reservation). The ledger is
+append-only, so these rows are not deleted. Total Groq spend for the run was a few paise.

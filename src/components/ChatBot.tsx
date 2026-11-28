@@ -1,4 +1,5 @@
 ﻿import { useState, useRef, useEffect } from "react";
+import { env } from "@/lib/env";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, X, Send, Loader2, Bot } from "lucide-react";
 
@@ -7,12 +8,12 @@ interface Message {
   text: string;
 }
 
-const WEBHOOK_URL = import.meta.env.VITE_CHATBOT_WEBHOOK_URL || "";
+const WEBHOOK_URL = env.chatbotWebhookUrl;
 
 const ChatBot = () => {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { role: "bot", text: "Hi! I'm your PlacePrepAI assistant 👋 Ask me anything about interviews, scores, credits, or job roles." }
+    { role: "bot", text: "Hi! I'm your PlacePrepAI assistant 👋 Ask me anything about interviews, scores, tokens, or job roles." }
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -133,5 +134,8 @@ const ChatBot = () => {
   );
 };
 
-export default ChatBot;
+/** The assistant is optional: hidden entirely when no webhook is configured. */
+const ChatBotGate = () => (WEBHOOK_URL ? <ChatBot /> : null);
+
+export default ChatBotGate;
 

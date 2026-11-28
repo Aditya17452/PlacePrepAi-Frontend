@@ -8,51 +8,50 @@ import {
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  analyzeResume, fetchSessions, getCredits,
-  type InterviewSession
+  uploadResume, getMyHistory, getWallet,
+  type SessionHistoryItem, type Wallet,
 } from "@/services/api";
+import { getUser } from "@/lib/session";
 import JDUploadSection from "@/components/JDUploadSection";
+
+const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [sessions,      setSessions]      = useState<InterviewSession[]>([]);
+  const [sessions,      setSessions]      = useState<SessionHistoryItem[]>([]);
   const [isAnalyzing,   setIsAnalyzing]   = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [fileName,      setFileName]      = useState("");
-  const [credits,       setCredits]       = useState<number | null>(null);
+  const [wallet,        setWallet]        = useState<Wallet | null>(null);
+  const [walletError,   setWalletError]   = useState(false);
+  const [uploadError,   setUploadError]   = useState("");
 
-  const studentName =
-    sessionStorage.getItem("student_name") ||
-    sessionStorage.getItem("name") ||
-    "Student";
+  const studentName = getUser()?.name || "Student";
+  const credits = wallet?.total_available ?? null;
+  const scored = sessions.filter((s) => typeof s.score === "number");
 
   useEffect(() => {
-    fetchSessions().then(setSessions).catch(console.error);
-    loadCredits();
+    getMyHistory().then(setSessions).catch(console.error);
+    getWallet().then(setWallet).catch(() => setWalletError(true));
   }, []);
-
-  const loadCredits = async () => {
-    try {
-      const data = await getCredits();
-      setCredits(data.credits);
-    } catch {
-      setCredits(99); // fallback: unlimited if API not ready
-    }
-  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
+    setUploadError("");
+    if (file.size > MAX_RESUME_BYTES) { setUploadError("Resume must be under 5 MB."); return; }
+    if (!/\.(pdf|docx)$/i.test(file.name)) { setUploadError("Upload a PDF or DOCX file."); return; }
     setFileName(file.name);
     setIsAnalyzing(true);
     setUploadSuccess(false);
     try {
-      // Still calls the backend so resume_text is stored for JD matching
-      await analyzeResume(file);
+      // Stores the parsed resume on the server; questions are personalised from it.
+      await uploadResume(file);
       setUploadSuccess(true);
     } catch (err) {
-      console.error(err);
+      setUploadError((err as Error).message || "Resume upload failed.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -78,14 +77,14 @@ const Dashboard = () => {
               { icon: Target,     label: "Sessions",   value: sessions.length.toString(), color: "text-primary" },
               {
                 icon: TrendingUp, label: "Avg Score",  color: "text-success",
-                value: sessions.length
-                  ? Math.round(sessions.reduce((a, s) => a + s.score, 0) / sessions.length) + "%"
+                value: scored.length
+                  ? Math.round(scored.reduce((a, s) => a + (s.score ?? 0), 0) / scored.length) + "%"
                   : "—"
               },
               {
-                icon: CreditCard, label: "Credits Left",
+                icon: CreditCard, label: "Interview Tokens",
                 color: credits === 0 ? "text-red-400" : "text-green-400",
-                value: credits === null ? "..." : credits === 99 ? "∞" : String(credits)
+                value: walletError ? "—" : credits === null ? "..." : String(credits)
               },
             ].map((stat) => (
               <motion.div key={stat.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -102,17 +101,30 @@ const Dashboard = () => {
             initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
             className="p-6 rounded-xl border-2 border-dashed border-border hover:border-primary/30 transition-colors mb-4 text-center cursor-pointer"
             onClick={() => fileRef.current?.click()}>
-            <input ref={fileRef} type="file" accept=".pdf" className="hidden" onChange={handleFileUpload} />
+            <input ref={fileRef} type="file" accept=".pdf,.docx" className="hidden" onChange={handleFileUpload} />
             <Upload className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
             <p className="text-foreground font-medium mb-1">
               {fileName || "Upload Your Resume"}
             </p>
-            <p className="text-sm text-muted-foreground">PDF format · AI stores your skills for JD matching below</p>
+            <p className="text-sm text-muted-foreground">PDF or DOCX, up to 5 MB · questions are personalised from your resume</p>
             <Button variant="hero" size="sm" className="mt-4" disabled={isAnalyzing}>
               <FileText className="w-4 h-4 mr-1" />
               {isAnalyzing ? "Analyzing resume..." : "Choose PDF"}
             </Button>
           </motion.div>
+
+          {uploadError && (
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 mb-4 text-sm text-red-500">{uploadError}</div>
+          )}
+
+          {credits === 0 && (
+            <div className="flex items-center justify-between gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 mb-4">
+              <p className="text-sm text-amber-700">
+                You have no interview tokens left{wallet?.college_allowance_remaining === 0 ? " (your college quota for this period is used up)" : ""}.
+              </p>
+              <Button variant="hero" size="sm" onClick={() => navigate("/plans")}>View plans</Button>
+            </div>
+          )}
 
           {/* Upload success banner */}
           <AnimatePresence>
@@ -157,10 +169,11 @@ const Dashboard = () => {
                     </div>
                     <div className="flex items-center gap-4">
                       <span className={`font-display font-bold text-lg ${
-                        s.score >= 80 ? "text-green-400"
+                        s.score == null ? "text-muted-foreground"
+                        : s.score >= 80 ? "text-green-400"
                         : s.score >= 60 ? "text-primary"
                         : "text-warning"
-                      }`}>{s.score}%</span>
+                      }`}>{s.score == null ? s.status : `${Math.round(s.score)}%`}</span>
                       <Button variant="hero-outline" size="sm"
                         onClick={() => navigate(`/report?session=${s.id}`)}>
                         View Report

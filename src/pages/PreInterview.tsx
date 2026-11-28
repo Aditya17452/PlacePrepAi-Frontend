@@ -1,9 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, Circle, ChevronRight, Mic, Monitor, Wifi, Clock, Brain, MessageSquare, AlertCircle } from "lucide-react";
+import { CheckCircle, Circle, ChevronRight, Mic, Monitor, Wifi, Clock, Brain, MessageSquare, AlertCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Navbar from "@/components/layout/Navbar";
+import {
+  clearPendingInterview,
+  getPendingInterview,
+  saveInterviewContext,
+} from "@/lib/interviewStore";
+import { displayName, getUser } from "@/lib/session";
+import { ApiError } from "@/lib/api/client";
+import { getConsents, recordConsent, startInterview } from "@/services/api";
 
 const INSTRUCTIONS = [
   {
@@ -47,6 +55,13 @@ const INSTRUCTIONS = [
     desc: "Type answers clearly in the text box. Press Enter or click Submit when done.",
     color: "text-cyan-400",
     bg: "bg-cyan-500/10 border-cyan-500/20"
+  },
+  {
+    icon: <ShieldCheck className="w-5 h-5" />,
+    title: "Proctoring Consent",
+    desc: "I agree that my camera, tab switches, full-screen exits and pasted text are monitored during this interview. These signals produce an integrity score shown on my report and to my college placement cell. A low-resolution snapshot is taken only when a violation is detected and is deleted after 14 days.",
+    color: "text-orange-400",
+    bg: "bg-orange-500/10 border-orange-500/20"
   }
 ];
 
@@ -54,10 +69,36 @@ const PreInterview = () => {
   const navigate = useNavigate();
   const [checked, setChecked] = useState<boolean[]>(new Array(INSTRUCTIONS.length).fill(false));
 
-  const studentName = sessionStorage.getItem("student_name") || "Candidate";
-  const company = sessionStorage.getItem("interview_company") || "Company";
-  const role = sessionStorage.getItem("interview_role") || "Role";
-  const sessionId = sessionStorage.getItem("session_id");
+  const pending = getPendingInterview();
+  const studentName = displayName(getUser()?.name) || "Candidate";
+  const company = pending?.company || "Company";
+  const role = pending?.role || "Role";
+
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState("");
+  // The notice version in force, read from the server so a stale build cannot record
+  // agreement to text it never displayed.
+  const [consentVersion, setConsentVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!pending) navigate("/dashboard", { replace: true });
+  }, [pending, navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getConsents()
+      .then(list => {
+        if (cancelled) return;
+        const proctoring = list.find(c => c.kind === "proctoring");
+        setConsentVersion(proctoring?.current_version ?? null);
+      })
+      .catch(() => {
+        /* Non-fatal: the server supplies its own current version on POST. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -85,10 +126,48 @@ const PreInterview = () => {
     setChecked(next);
   };
 
-  const handleStart = () => {
-    if (!allChecked) return;
-    if (!sessionId) { navigate("/dashboard"); return; }
-    navigate("/interview");
+  const handleStart = async () => {
+    if (!allChecked || starting) return;
+    if (!pending) { navigate("/dashboard"); return; }
+
+    setError("");
+    setStarting(true);
+
+    // Full screen needs a user gesture, so it is requested synchronously on the click,
+    // before any await — asking after a network round trip is refused by the browser.
+    try {
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+    } catch {
+      /* Refused (e.g. iOS Safari). The interview still runs; exits are just not detectable. */
+    }
+
+    try {
+      // Consent first: the backend refuses a proctored session without a current one,
+      // and recording it after the session existed would be recording it too late.
+      await recordConsent("proctoring", consentVersion ?? "", true);
+
+      const data = await startInterview({
+        jdId: pending.jdId,
+        customJdId: pending.customJdId,
+      });
+      saveInterviewContext(data);
+      clearPendingInterview();
+      navigate("/interview");
+    } catch (err) {
+      const e = err as Error;
+      if (err instanceof ApiError && err.status === 402) {
+        setError(`${e.message} You can buy a plan from the Plans page.`);
+      } else if (err instanceof ApiError && err.status === 409) {
+        setError(e.message);
+      } else {
+        setError(e.message || "Could not start the interview. Please try again.");
+      }
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    } finally {
+      setStarting(false);
+    }
   };
 
   return (
@@ -123,7 +202,7 @@ const PreInterview = () => {
         >
           <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-yellow-200">
-            This interview uses <strong>1 interview credit</strong>. Once started, the session cannot be paused. Make sure you are ready before proceeding.
+            One interview token is reserved for this session. It is used once you answer 3 questions or 5 minutes pass; if the interview fails on our side before that, it is returned automatically. The interview runs in full screen and cannot be paused.
           </p>
         </motion.div>
 
@@ -186,6 +265,17 @@ const PreInterview = () => {
           </span>
         </div>
 
+        {/* Start failure — a refused consent, no tokens, or an interview already open */}
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-3 p-4 mb-4 rounded-xl bg-red-500/10 border border-red-500/20"
+          >
+            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-red-200">{error}</p>
+          </div>
+        )}
+
         {/* Start button */}
         <AnimatePresence>
           <motion.div
@@ -194,10 +284,12 @@ const PreInterview = () => {
           >
             <Button
               onClick={handleStart}
-              disabled={!allChecked}
+              disabled={!allChecked || starting}
               className="w-full h-14 text-base font-bold gap-2 bg-primary hover:bg-primary/90 disabled:cursor-not-allowed"
             >
-              {allChecked ? (
+              {starting ? (
+                "Starting your interview…"
+              ) : allChecked ? (
                 <>
                   Start Interview <ChevronRight className="w-5 h-5" />
                 </>
@@ -209,7 +301,7 @@ const PreInterview = () => {
         </AnimatePresence>
 
         <p className="text-center text-xs text-muted-foreground mt-4">
-          By starting, you agree that this session will use 1 credit from your account.
+          By starting, you agree to the proctoring terms above and that this session uses 1 interview token.
         </p>
       </div>
     </div>
