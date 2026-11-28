@@ -663,7 +663,7 @@ const JDUploadSection = () => {
                           <div className="flex items-start gap-2 p-2.5 rounded-xl bg-yellow-500/5 border border-yellow-500/10">
                             <AlertCircle className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0 mt-0.5" />
                             <p className="text-xs text-yellow-400/80 leading-snug">
-                              Requires â‰¥70% match. Add the missing skills to your resume and re-upload.
+                              Requires ≥70% match. Add the missing skills to your resume and re-upload.
                             </p>
                           </div>
                         )}

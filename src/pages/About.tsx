@@ -42,7 +42,7 @@ const About = () => {
           </h1>
           <p className="text-lg text-muted-foreground leading-relaxed">
             We built PlacePrepAI because placement season is stressful enough.
-            Students shouldn't have to pay â‚¹10,000 for mock interviews when AI can do it better, faster, and for free.
+            Students shouldn't have to pay ₹10,000 for mock interviews when AI can do it better, faster, and for free.
           </p>
         </motion.div>
       </section>

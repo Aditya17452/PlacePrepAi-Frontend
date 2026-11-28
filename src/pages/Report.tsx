@@ -24,7 +24,7 @@ interface ReportData {
     communication: number;
     problemSolving: number;
     confidence: number;
-    bodyLanguage: number;
+    bodyLanguage: number | null;
   };
   strengths: string[];
   improvements: string[];
@@ -63,7 +63,9 @@ function normalizeReport(r: ReportResponse): ReportData {
       communication: Math.round(c.communication ?? 0),
       problemSolving: Math.round(c.problemSolving ?? 0),
       confidence: Math.round(c.confidence ?? 0),
-      bodyLanguage: Math.round(c.bodyLanguage ?? 0),
+      // null means no webcam samples were recorded. Keep it null rather than 0:
+      // showing 0% reads as 'you scored nothing', not 'this was not measured'.
+      bodyLanguage: c.bodyLanguage == null ? null : Math.round(c.bodyLanguage),
     },
     strengths: r.strengths ?? [],
     improvements: r.improvements ?? [],
@@ -290,8 +292,10 @@ const Report = () => {
             { label: "Communication", value: report.categories?.communication || 0 },
             { label: "Problem Solving", value: report.categories?.problemSolving || 0 },
             { label: "Confidence", value: report.categories?.confidence || 0 },
-            { label: "Body Language", value: report.categories?.bodyLanguage || 0 },
         ];
+        if (report.categories?.bodyLanguage != null) {
+            categories.push({ label: "Body Language", value: report.categories.bodyLanguage });
+        }
         
         categories.forEach(cat => {
             checkPage(12);
@@ -585,14 +589,16 @@ const Report = () => {
                     <span style={{ color: getColor(val) }}>{icon}</span>
                     {label}
                   </div>
-                  <span className="text-sm font-bold" style={{ color: getColor(val) }}>{val}%</span>
+                  <span className="text-sm font-bold" style={{ color: val == null ? undefined : getColor(val) }}>
+                    {val == null ? <span className="text-muted-foreground font-medium">Not assessed</span> : `${val}%`}
+                  </span>
                 </div>
                 <div className="h-2 rounded-full bg-muted overflow-hidden">
                   <motion.div
                     className="h-full rounded-full"
-                    style={{ backgroundColor: getColor(val) }}
+                    style={{ backgroundColor: getColor(val ?? 0) }}
                     initial={{ width: 0 }}
-                    animate={{ width: `${val}%` }}
+                    animate={{ width: `${val ?? 0}%` }}
                     transition={{ duration: 1, delay: 0.3, ease: "easeOut" }}
                   />
                 </div>
@@ -656,7 +662,7 @@ const Report = () => {
             <ul className="space-y-2">
               {(report.improvements || []).map((imp, i) => (
                 <li key={i} className="flex items-start gap-2 text-sm text-foreground/80">
-                  <span className="text-yellow-400 mt-0.5">â†‘</span> {imp}
+                  <span className="text-amber-600 dark:text-amber-400 mt-0.5">↑</span> {imp}
                 </li>
               ))}
             </ul>
