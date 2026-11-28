@@ -886,3 +886,81 @@ backend preview plus `/api`. The existing production value was left untouched.
 - Resend domain `placeprepai.fun` is `not_started`: until the DKIM records are added,
   email only sends from `onboarding@resend.dev` and only reaches the Resend account
   owner. OTP will work for your own testing, not for other students.
+
+---
+
+## Step 5 — end-to-end test on the previews (2026-11-28)
+
+Backend `dpl_2EgeSDVdP9Vbuk1rjUSFRQBrrtYP` (`c7f8f1c`), frontend
+`dpl_CqSCVLygia4g3K2FF3nh6XpLBbe3` (`7c5b00b`), both `environment=preview`, Vercel
+Authentication off on both projects.
+
+Run against the live previews: real Supabase, real Upstash, real Groq, Razorpay test
+mode. 30 of 33 assertions passed; the three that did not are listed under *Blocked*.
+
+### PR #2's checklist, step by step
+
+| # | Step | Result | Evidence |
+|---|---|---|---|
+| 1 | `VITE_API_BASE_URL` set, preview origin in CORS | **pass** | Built bundle `index-PVLRHOMV.js` references only `…git-feat-phase-2a2332…/api`; zero references to the old project alias. `OPTIONS /api/auth/login` returns `access-control-allow-origin: <frontend preview alias>` |
+| 2 | Register, then confirm the email code | **register pass / OTP blocked** | `POST /api/auth/register` → `201 role=student needs_verification=True`. `POST /api/auth/otp/send` → **503**, log: `otp_delivery_unavailable … Provider rejected the request (403)` |
+| 3 | Verify the phone number, then see free tokens | **blocked by design** | `503 "We cannot send phone codes right now."` — `SMS_ENABLED=false` while the DLT template is pending. The free plan is `requires_phone_verification: true`, so free tokens are unreachable until SMS is on |
+| 4 | Upload a resume, add a JD, start the interview, one token reserved | **pass** | Resume parsed (`pdf_extracted … chars=238`); `POST /api/jd/submit` → 201; `POST /api/interviews/start` → 201, `funded_by: college`; college pool spendable 456 → 455 |
+| 5a | Answer 3 questions, token consumed | **pass** | Three `POST …/turns` → 200, each returning a different adaptive question; `token_consumed` in the log; `total_available` 3 → 2 |
+| 5b | Refresh mid-interview, the interview resumes | **pass** | Replaying the same `turn_id` on a new connection returns the identical question and charges nothing (`total_available` 2 → 2); a fresh `turn_id` then continues the session at `phase: technical` |
+| 5c | Switch tabs / exit full screen, the flags show | **pass** | `POST …/proctoring` → `{accepted: 2, warnings_issued: 0, terminate: false}`; report shows `integrityScore 88.4` and `integrityTimeline ['tab_switch', 'fullscreen_exit']` |
+| 6 | End the interview; report shows score and a separate integrity section | **pass** | `POST …/end` → 200; report `status=complete overallScore=80.0 verdict=Good`, integrity reported separately from the score |
+| 7 | Buy on `/plans`; tokens only after the webhook | **order pass / payment needs you** | `GET /api/payments/plans` → 4 plans; `POST /api/payments/create-order` → `order_U5UjFMolgdWFUI`, 14900 paise, `rzp_test_…`. `personal_balance` stayed 0, so nothing is granted before the webhook. Entering card details is yours to do — I do not enter payment details |
+| 8 | Admin: enroll a college, accept the invite, upload a roster, check the quota | **blocked** | Needs an admin JWT. `POST /api/admin/tokens/grant` requires `college_id` and an admin principal; no seeded admin exists and I will not create one without your say-so |
+
+Also verified in a real browser: the landing page renders; `/dashboard` redirects to
+`/login?next=%2Fdashboard`; a wrong password shows "Invalid email or password."; a
+non-deliverable address shows the field-level message
+`email: value is not a valid email address …`, so FastAPI validation arrays reach the UI
+readably. I did not type any password into the hosted preview, so authenticated UI
+screens were exercised through the API rather than the browser.
+
+### Two real bugs found and fixed
+
+**1. Every payment returned 502** (`f3dd356`). `razorpay` 1.4.2's `client.py` does
+`import pkg_resources`, which lives in setuptools. pip left setuptools in every
+environment, so this never showed locally; Vercel installs with `uv sync --locked`,
+which does not, so `create-order` and `refund` were dead in any deployment. Webhook
+verification was unaffected (it uses `hmac` directly), so the grant path was fine —
+students simply could never reach it. Fixed by declaring `setuptools==75.6.0`. The test
+suite could not have caught it (CI installs with pip), so CI gained a `deploy-env` job
+that installs exactly as Vercel does and imports the lazily-imported integrations.
+
+**2. The daily interview cap was off by one** (`c7f8f1c`). The start handler adds the
+`InterviewSession` row and flushes it before reserving, so the cap's `COUNT` included the
+session being created: a cap of 3 allowed only 2 interviews a day. `_assert_no_active_interview`
+already excluded the new row by id; the cap check did not. The pre-existing cap test
+passed either way because it never created that row — the regression test now adds and
+flushes it exactly as the router does, and fails with `DailyCapReached` without the fix.
+
+### Blocked, with the reason
+
+1. **Email OTP delivery.** Resend rejects any recipient except the account owner's exact
+   address until a domain is verified (`403`), and the `+alias` form does not count. Fix:
+   add the DKIM records for `placeprepai.fun` in Resend. Until then no student but you can
+   receive a code, so registration cannot complete for anyone else.
+2. **Phone OTP.** `SMS_ENABLED=false` by decision; returns a clear 503. Because the free
+   plan requires a verified phone, the free-tier path is closed until the DLT template is
+   approved. Paid and college-funded interviews are unaffected.
+3. **Admin console flows.** No admin credentials. `ADMIN_BOOTSTRAP_EMAILS` promotes an
+   existing account at app startup, so registering your own address and restarting would
+   create one — that hands an admin login to whoever holds that password, so it needs your
+   decision rather than mine.
+
+### Test fixtures left in the database
+
+The email-OTP block meant the student could not self-enrol, so the fixture was applied
+directly: a roster row for `aaduchouksey1234+e2estep5@gmail.com` (now `is_active=false`),
+and on that student `email_verified_at`, `college_id` and `enrolled_via='roster'` set by
+hand — the same three fields `enrollment._attach` writes. Everything after that point went
+through the real API.
+
+Left behind: one test student (`68764e9e…`), 3 interview sessions, 6 ledger entries and one
+Razorpay test order. The college pool went 457 → 455 (two interviews consumed; the third
+was ended after two answers and correctly released its reservation). The ledger is
+append-only, so these rows are not deleted. Total Groq spend for the run was a few paise.
