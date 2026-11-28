@@ -368,7 +368,7 @@ const JDUploadSection = () => {
           <motion.div
             key="credit-err"
             initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-            className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 mb-4 text-sm text-red-400"
+            className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 mb-4 text-sm text-red-600 dark:text-red-400"
           >
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span className="flex-1">{creditError}</span>
@@ -399,7 +399,7 @@ const JDUploadSection = () => {
                 {/* Company */}
                 <div>
                   <label className="text-xs text-muted-foreground font-medium block mb-1.5">
-                    Company Name <span className="text-red-400">*</span>
+                    Company Name <span className="text-red-600 dark:text-red-400">*</span>
                   </label>
                   <input
                     type="text"
@@ -413,14 +413,14 @@ const JDUploadSection = () => {
                         : "border-border hover:border-primary/40 focus:ring-primary/30"}`}
                   />
                   {errors.companyName && (
-                    <p className="text-xs text-red-400 mt-1">{errors.companyName}</p>
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.companyName}</p>
                   )}
                 </div>
 
                 {/* Role */}
                 <div>
                   <label className="text-xs text-muted-foreground font-medium block mb-1.5">
-                    Role Title <span className="text-red-400">*</span>
+                    Role Title <span className="text-red-600 dark:text-red-400">*</span>
                   </label>
                   <input
                     type="text"
@@ -434,7 +434,7 @@ const JDUploadSection = () => {
                         : "border-border hover:border-primary/40 focus:ring-primary/30"}`}
                   />
                   {errors.roleTitle && (
-                    <p className="text-xs text-red-400 mt-1">{errors.roleTitle}</p>
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.roleTitle}</p>
                   )}
                 </div>
               </div>
@@ -442,7 +442,7 @@ const JDUploadSection = () => {
               {/* JD Text */}
               <div className="mb-4">
                 <label className="text-xs text-muted-foreground font-medium block mb-1.5">
-                  Job Description Text <span className="text-red-400">*</span>
+                  Job Description Text <span className="text-red-600 dark:text-red-400">*</span>
                 </label>
                 <textarea
                   value={jdText}
@@ -457,14 +457,14 @@ const JDUploadSection = () => {
                       : "border-border hover:border-primary/40 focus:ring-primary/30"}`}
                 />
                 <div className="flex items-center justify-between mt-1">
-                  <p className="text-xs text-red-400 min-h-[16px]">{errors.jdText || ""}</p>
+                  <p className="text-xs text-red-600 dark:text-red-400 min-h-[16px]">{errors.jdText || ""}</p>
                   <p className="text-xs text-muted-foreground">{jdText.length} characters</p>
                 </div>
               </div>
 
               {/* Submit error */}
               {errors.submit && (
-                <p className="text-xs text-red-400 mb-3">{errors.submit}</p>
+                <p className="text-xs text-red-600 dark:text-red-400 mb-3">{errors.submit}</p>
               )}
 
               {/* Form actions */}
@@ -590,7 +590,7 @@ const JDUploadSection = () => {
 
                   {/* Failed state */}
                   {isFailed ? (
-                    <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/5 border border-red-500/10 text-xs text-red-400">
+                    <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/5 border border-red-500/10 text-xs text-red-600 dark:text-red-400">
                       <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
                       {jd.error ?? "Match analysis failed. Please upload your resume first, then try again."}
                     </div>
@@ -628,7 +628,7 @@ const JDUploadSection = () => {
                           {jd.missing_skills.slice(0, 4).map(s => (
                             <span
                               key={s}
-                              className="px-2 py-0.5 text-xs rounded-full bg-red-500/10 text-red-400/80 border border-red-500/20"
+                              className="px-2 py-0.5 text-xs rounded-full bg-red-500/10 text-red-600 dark:text-red-400/80 border border-red-500/20"
                             >
                               ✗ {s}
                             </span>

@@ -198,10 +198,10 @@ const PreInterview = () => {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
-          className="flex items-start gap-3 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20 mb-6"
+          className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-300 dark:bg-amber-500/10 dark:border-amber-500/30 mb-6"
         >
-          <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-yellow-200">
+          <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-amber-900 dark:text-amber-100">
             One interview token is reserved for this session. It is used once you answer 3 questions or 5 minutes pass; if the interview fails on our side before that, it is returned automatically. The interview runs in full screen and cannot be paused.
           </p>
         </motion.div>
@@ -269,10 +269,10 @@ const PreInterview = () => {
         {error && (
           <div
             role="alert"
-            className="flex items-start gap-3 p-4 mb-4 rounded-xl bg-red-500/10 border border-red-500/20"
+            className="flex items-start gap-3 p-4 mb-4 rounded-xl bg-red-50 border border-red-300 dark:bg-red-500/10 dark:border-red-500/30"
           >
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-red-200">{error}</p>
+            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+            <p className="text-sm font-medium text-red-900 dark:text-red-100">{error}</p>
           </div>
         )}
 
