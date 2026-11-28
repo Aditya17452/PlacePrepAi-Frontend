@@ -38,7 +38,22 @@ interface StudentJD {
   advice: string;
   status: "pending" | "complete" | "failed";
   created_at: string;
+  /** Why this card failed, when the reason is not "no resume yet" — e.g. a poll timeout.
+   *  Client-side only; the API never sends it. */
+  error?: string;
 }
+
+/** Polling budget for a pending JD.
+ *
+ *  The old loop was `setInterval(..., 2000)` with no cap and errors swallowed, so a JD
+ *  that never left "pending" was polled forever — production logged 1110+ requests
+ *  against a single id in under an hour. Each request takes ~1s, so a fixed interval
+ *  also let requests overlap. This backs off and gives up, and the request is awaited
+ *  before the next one is scheduled so only one is ever in flight. */
+const POLL_FIRST_DELAY_MS = 1_500;
+const POLL_MAX_DELAY_MS = 15_000;
+const POLL_BACKOFF = 1.6;
+const POLL_MAX_ATTEMPTS = 12; // ~2 minutes in total with the backoff above
 
 // ── Colour helpers ─────────────────────────────────────────────────────────────
 
@@ -153,19 +168,63 @@ const JDUploadSection = () => {
   useEffect(() => {
     if (pendingIds.length === 0) return;
 
-    const timer = setInterval(async () => {
-      const updates = await Promise.all(
-        pendingIds.map(id => getStudentJD(id).catch(() => null))
-      );
-      setJds(prev =>
-        prev.map(jd => {
-          const fresh = updates.find((u) => u?.id === jd.id);
-          return fresh ? { ...jd, ...(fresh as Partial<StudentJD>) } : jd;
-        })
-      );
-    }, 2000);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let attempt = 0;
+    let delay = POLL_FIRST_DELAY_MS;
 
-    return () => clearInterval(timer);
+    const giveUp = (reason: string) => {
+      setJds(prev =>
+        prev.map(jd =>
+          pendingIds.includes(jd.id) && jd.status === "pending"
+            ? { ...jd, status: "failed", error: reason }
+            : jd
+        )
+      );
+    };
+
+    const tick = async () => {
+      attempt += 1;
+      let requestFailed = false;
+
+      try {
+        const updates = await Promise.all(pendingIds.map(id => getStudentJD(id)));
+        if (cancelled) return;
+
+        setJds(prev =>
+          prev.map(jd => {
+            const fresh = updates.find(u => u?.id === jd.id);
+            return fresh ? { ...jd, ...(fresh as Partial<StudentJD>) } : jd;
+          })
+        );
+
+        // Everything settled — stop, rather than polling a finished JD forever.
+        if (!updates.some(u => u?.status === "pending")) return;
+      } catch {
+        requestFailed = true;
+      }
+
+      if (cancelled) return;
+
+      if (attempt >= POLL_MAX_ATTEMPTS) {
+        giveUp(
+          requestFailed
+            ? "We lost contact with the server while analysing this JD. Check your connection and try again."
+            : "This JD is taking longer than expected to analyse. Please try again in a few minutes."
+        );
+        return;
+      }
+
+      delay = Math.min(Math.round(delay * POLL_BACKOFF), POLL_MAX_DELAY_MS);
+      timer = setTimeout(tick, delay);
+    };
+
+    timer = setTimeout(tick, POLL_FIRST_DELAY_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingIds.join(",")]);
 
@@ -533,7 +592,7 @@ const JDUploadSection = () => {
                   {isFailed ? (
                     <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/5 border border-red-500/10 text-xs text-red-400">
                       <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                      Match analysis failed. Please upload your resume first, then try again.
+                      {jd.error ?? "Match analysis failed. Please upload your resume first, then try again."}
                     </div>
                   ) : (
                     <>
