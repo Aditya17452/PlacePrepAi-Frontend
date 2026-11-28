@@ -964,3 +964,76 @@ Left behind: one test student (`68764e9e…`), 3 interview sessions, 6 ledger en
 Razorpay test order. The college pool went 457 → 455 (two interviews consumed; the third
 was ended after two answers and correctly released its reservation). The ledger is
 append-only, so these rows are not deleted. Total Groq spend for the run was a few paise.
+
+---
+
+## Step 6 — merged to main and deployed to production (2026-11-28)
+
+### Merge status
+
+| Repo | Branch | PR | Result |
+|---|---|---|---|
+| Backend | `feat/phase1-production-foundation` | #1 | merged, CI green |
+| Backend | `chore/project-structure` | #2 | merged, CI green |
+| Backend | `feat/phase1-backend-gaps` | #3 | merged, CI green (`test` + `deploy-env`) |
+| Frontend | `feat/phase1-production-foundation` | #1 | merged |
+| Frontend | `feat/phase1c-frontend` | #2 | merged, CI green |
+
+Backend `main` = `5de7548`, frontend `main` = `f8838bc`. CI is green on both mains.
+
+Two CI fixes were needed first, because all three backend PRs were red:
+
+- The runner image no longer ships Python 3.11.9, so `setup-python` failed before any
+  step ran. Now pinned to 3.12, which is also what Vercel deploys on.
+- `alembic/env.py` imports `app.core.config`, so the startup validator also runs in the
+  migration-render step and refused to load `env.py` with `JWT_SECRET` unset.
+
+### Production
+
+| Check | Result |
+|---|---|
+| Backend `GET /health` | `200 {"status":"ok","env":"production","version":"2.0.0"}` |
+| Backend `GET /ready` | `200 {"status":"ready","database":true,"redis":true}` |
+| Backend `GET /api/payments/plans` | `200` — real rows, production DB |
+| `/openapi.json`, `/docs` | `404` — schema and docs off in production, by design |
+| `/api/super/*`, `/api/admin/tokens/grant` unauthenticated | `401` |
+| CORS preflight from `https://www.placeprepai.fun` | `200`, `access-control-allow-origin` echoes the live domain |
+| Production bundle's API base | `https://placeprepai-backend-aditya17452s-projects.vercel.app/api`, no stale host |
+| `www.placeprepai.fun` and `placeprepai.fun` | `200` |
+| Live site end to end | `/dashboard` redirects to `/login?next=…`; a bad password returns "Invalid email or password." from the production API in a real browser |
+
+`ENV=production` means the strict validator passed: JWT secret length, non-SQLite
+database, Redis present, Groq key, admin bootstrap list, Supabase service-role key, and
+HTTPS-only CORS origins.
+
+Production env vars added in this step: `GOOGLE_REDIRECT_URI` (production target — **must
+also be added verbatim to the Google console**, or Google sign-in fails on production),
+and `VITE_API_BASE_URL` repointed at the production backend. Razorpay keys remain
+preview-only, so payments are inactive on production until live keys are added —
+`ENV=production` deliberately refuses an `rzp_test_` key.
+
+### Deployment protection
+
+Re-enabled on the **frontend** (`all_except_custom_domains`): custom domains return 200,
+preview URLs now 302 to Vercel login.
+
+Left **off on the backend**, deliberately. With `all_except_custom_domains` only custom
+domains are exempt, and the backend is served from `*.vercel.app` — so enabling it would
+make every API call from the live site return Vercel's login page instead of JSON. The fix
+is to put the backend on a custom domain (for example `api.placeprepai.fun`) and then
+re-enable protection.
+
+### Admin access
+
+`ADMIN_BOOTSTRAP_EMAILS` now holds the three addresses on both targets. State after the
+production deploy:
+
+| Email | Account | Role |
+|---|---|---|
+| `adityachouksey017@gmail.com` | exists since 2026-05-29 | **admin** already |
+| `darpannaganpuriya@gmail.com` | exists since 2026-05-31 | **admin** already |
+| `aaduchouksey1234@gmail.com` | none | logged `admin_bootstrap_skipped_no_account` |
+
+Bootstrap promotes existing accounts at startup and never creates one, so the third
+address has to register first; the next cold start then promotes it. Admins can log in
+without a verified email, so the Resend sandbox limit does not block this.
